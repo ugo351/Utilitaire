@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UV-Vis / Plate Reader Viewer</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e; color: #e0e0e0;
+            height: 100vh; display: flex; flex-direction: column;
+        }
+        header {
+            background: #16213e; padding: 10px 20px;
+            display: flex; align-items: center; gap: 15px;
+            border-bottom: 2px solid #0f3460; flex-shrink: 0;
+        }
+        header h1 { font-size: 1.3em; color: #8b5cf6; white-space: nowrap; }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 2px; background: #0f3460;
+            padding: 0 20px; flex-shrink: 0;
+        }
+        .tab-btn {
+            padding: 10px 20px; cursor: pointer;
+            background: #16213e; color: #888;
+            border: none; font-size: 1em;
+            border-top: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #e0e0e0; }
+        .tab-btn.active { color: #8b5cf6; border-top-color: #8b5cf6; background: #1a1a2e; }
+
+        .tab-content { display: none; flex: 1; min-height: 0; overflow: hidden; }
+        .tab-content.active { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+        .main-container { display: flex; flex: 1; overflow: hidden; height: 100%; }
+        .sidebar {
+            width: 340px; min-width: 340px;
+            background: #16213e; border-right: 2px solid #0f3460;
+            display: flex; flex-direction: column; overflow-y: auto;
+        }
+        .sidebar-section {
+            padding: 12px 15px; border-bottom: 1px solid #0f3460;
+        }
+        .sidebar-section h3 {
+            font-size: 0.95em; text-transform: uppercase;
+            color: #8b5cf6; margin-bottom: 8px; letter-spacing: 1px;
+        }
+        .drop-zone {
+            border: 2px dashed #0f3460; border-radius: 8px;
+            padding: 20px; text-align: center; cursor: pointer;
+            transition: all 0.3s; background: rgba(15, 52, 96, 0.2);
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #8b5cf6; background: rgba(139, 92, 246, 0.1);
+        }
+        .drop-zone p { font-size: 0.95em; color: #888; margin-top: 5px; }
+        .drop-zone .icon { font-size: 2em; }
+        input[type="file"] { display: none; }
+        .file-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+        .file-item {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 8px; border-radius: 5px;
+            background: rgba(15, 52, 96, 0.3); font-size: 0.92em;
+        }
+        .file-item .color-dot {
+            width: 14px; height: 14px; border-radius: 50%;
+            flex-shrink: 0; cursor: pointer; border: 2px solid transparent;
+        }
+        .file-item .color-dot:hover { border-color: #fff; }
+        .file-item .file-name {
+            flex: 1; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; cursor: pointer;
+        }
+        .file-item .file-name:hover { color: #8b5cf6; }
+        .file-item .file-actions { display: flex; gap: 3px; }
+        .file-item button, .file-item select {
+            background: none; border: none; color: #888;
+            cursor: pointer; font-size: 1.05em; padding: 2px 4px; border-radius: 3px;
+        }
+        .file-item button:hover { color: #8b5cf6; background: rgba(139, 92, 246, 0.15); }
+        .file-item button.active { color: #4ecca3; }
+        .controls-group { display: flex; flex-direction: column; gap: 8px; }
+        .control-row { display: flex; align-items: center; gap: 8px; }
+        .control-row label { font-size: 0.92em; min-width: 80px; }
+        .btn {
+            padding: 6px 12px; border: 1px solid #0f3460; border-radius: 5px;
+            background: rgba(15, 52, 96, 0.5); color: #e0e0e0;
+            cursor: pointer; font-size: 0.92em; transition: all 0.2s;
+        }
+        .btn:hover { background: #0f3460; border-color: #8b5cf6; }
+        .btn.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+        .btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        select, input[type="number"], input[type="text"] {
+            padding: 5px 8px; border: 1px solid #0f3460; border-radius: 4px;
+            background: #1a1a2e; color: #e0e0e0; font-size: 0.92em;
+        }
+        input[type="number"] { width: 70px; }
+        input[type="color"] { border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; cursor: pointer; }
+        .checkbox-row {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.92em; cursor: pointer;
+        }
+        .checkbox-row input[type="checkbox"] { accent-color: #8b5cf6; }
+        .plot-container { flex: 1; padding: 10px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
+        .plot-container > div { flex: 1; border-radius: 8px; overflow: hidden; min-height: 0; }
+        .info-bar {
+            background: #16213e; padding: 6px 15px; font-size: 0.92em;
+            color: #888; border-top: 1px solid #0f3460;
+            display: flex; gap: 20px; flex-shrink: 0;
+        }
+        .info-bar span { color: #4ecca3; }
+        .slider {
+            -webkit-appearance: none; width: 100%; height: 4px;
+            border-radius: 2px; background: #0f3460; outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            border-radius: 50%; background: #8b5cf6; cursor: pointer;
+        }
+        .color-picker-hidden {
+            width: 0; height: 0; padding: 0; border: 0;
+            position: absolute; visibility: hidden;
+        }
+        .blank-zone {
+            border: 1px dashed #0f3460; border-radius: 5px;
+            padding: 8px; text-align: center; cursor: pointer;
+            font-size: 0.92em; color: #888; transition: all 0.2s;
+        }
+        .blank-zone:hover { border-color: #8b5cf6; }
+        .blank-zone.has-blank { border-color: #4ecca3; color: #4ecca3; }
+        .style-select {
+            background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460;
+            border-radius: 3px; font-size: 0.92em; padding: 1px 3px;
+        }
+        .peaks-table {
+            width: 100%; font-size: 0.92em;
+            border-collapse: collapse; margin-top: 5px;
+        }
+        .peaks-table th, .peaks-table td {
+            padding: 3px 6px; text-align: left;
+            border-bottom: 1px solid #0f3460;
+        }
+        .peaks-table th { color: #8b5cf6; }
+
+        /* Plate reader specific */
+        .plate-list {
+            display: flex; flex-direction: column; gap: 3px;
+            max-height: 100px; overflow-y: auto;
+        }
+        .plate-item {
+            padding: 6px 10px; border-radius: 4px; cursor: pointer;
+            background: rgba(15, 52, 96, 0.3); font-size: 0.92em;
+            transition: all 0.2s; display: flex; justify-content: space-between;
+        }
+        .plate-item:hover { background: rgba(139, 92, 246, 0.15); }
+        .plate-item.selected { background: rgba(139, 92, 246, 0.3); color: #8b5cf6; font-weight: bold; }
+        .column-list {
+            display: flex; flex-direction: column; gap: 2px;
+            max-height: 180px; overflow-y: auto; margin-top: 4px;
+        }
+        .col-item {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 8px; border-radius: 4px; font-size: 0.92em;
+            background: rgba(15, 52, 96, 0.2);
+        }
+        .col-item input[type="checkbox"] { accent-color: #8b5cf6; flex-shrink: 0; }
+        .col-item .col-label {
+            flex: 1; cursor: pointer; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+        }
+        .col-item .col-label:hover { color: #8b5cf6; }
+        .col-item .col-actions { display: flex; gap: 3px; }
+        .col-item .color-dot-sm {
+            width: 10px; height: 10px; border-radius: 50%;
+            flex-shrink: 0; cursor: pointer; border: 1px solid transparent;
+        }
+        .col-item .color-dot-sm:hover { border-color: #fff; }
+        .col-item .blank-badge {
+            font-size: 0.92em; padding: 1px 5px; border-radius: 3px;
+            background: #e94560; color: #fff; cursor: pointer;
+        }
+        .col-item .blank-set-btn {
+            font-size: 0.92em; padding: 1px 5px; border-radius: 3px;
+            background: rgba(15,52,96,0.5); color: #888; cursor: pointer;
+            border: none;
+        }
+        .col-item .blank-set-btn:hover { background: #e94560; color: #fff; }
+        .view-mode-bar {
+            display: flex; gap: 4px;
+        }
+        .view-mode-bar .btn { flex: 1; text-align: center; font-size: 0.92em; padding: 5px 6px; }
+        .nav-bar {
+            display: flex; align-items: center; gap: 5px; margin-top: 6px;
+        }
+        .nav-bar .nav-label {
+            flex: 1; text-align: center; font-size: 0.92em;
+            color: #4ecca3; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .nav-bar .btn { padding: 4px 10px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>UV-Vis / Plate Reader Viewer</h1>
+        <div style="font-size:0.92em; color:#888;">Spectroscopie UV-Vis &amp; Fluorescence</div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('uvvis')">🔬 UV-Vis</button>
+        <button class="tab-btn" onclick="switchTab('plate')">🧫 Plate Reader</button>
+    </div>
+
+    <!-- =========================================================
+         UV-VIS TAB
+         ========================================================= -->
+    <div class="tab-content active" id="tab-uvvis">
+        <div class="main-container">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>Fichiers spectres</h3>
+                    <div class="drop-zone" id="uvDropZone">
+                        <div class="icon">📂</div>
+                        <div>Glisser-déposer des fichiers CSV</div>
+                        <p>Format CCA paires ou CSV générique</p>
+                    </div>
+                    <input type="file" id="uvFileInput" multiple accept=".csv,.txt">
+                    <div class="file-list" id="uvFileList"></div>
+                    <button class="btn" style="margin-top:6px; width:100%; font-size:0.92em;" onclick="uvDatasets=[]; uvRenderFileList(); uvUpdatePlot();">Tout supprimer</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Blanc (optionnel)</h3>
+                    <div class="blank-zone" id="uvBlankZone">
+                        Aucun blanc — cliquer ou glisser un fichier CSV
+                    </div>
+                    <input type="file" id="uvBlankInput" accept=".csv,.txt">
+                    <div style="margin-top:5px;">
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="uvSubtractBlank" checked onchange="uvUpdatePlot()">
+                            Soustraire le blanc
+                        </label>
+                        <button class="btn" style="margin-top:5px; font-size:0.92em;" onclick="uvBlankData=null; document.getElementById('uvBlankZone').textContent='Aucun blanc — cliquer ou glisser un fichier CSV'; document.getElementById('uvBlankZone').classList.remove('has-blank'); uvUpdatePlot();">Supprimer blanc</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Titre</h3>
+                    <input type="text" id="uvTitle" value="Spectres UV-Vis" style="width:100%;" oninput="uvUpdatePlot()">
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Affichage</h3>
+                    <div class="controls-group">
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="uvNormalize" onchange="uvUpdatePlot()">
+                            Normaliser (0-1)
+                        </label>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="uvGrid" checked onchange="uvUpdatePlot()">
+                            Grille
+                        </label>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="uvShowPeaks" checked onchange="uvUpdatePlot()">
+                            Afficher λmax
+                        </label>
+                        <div class="control-row">
+                            <label>Seuil pic (%):</label>
+                            <input type="number" id="uvPeakThreshold" value="10" min="1" max="50" step="1" style="width:55px;" onchange="uvUpdatePlot()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Lissage</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Fenêtre :</label>
+                            <span id="uvSmoothVal" style="font-size:0.92em; color:#4ecca3;">0</span>
+                        </div>
+                        <input type="range" class="slider" id="uvSmoothSlider" min="0" max="25" value="0" step="1" oninput="document.getElementById('uvSmoothVal').textContent=this.value; uvUpdatePlot();">
+                        <div class="control-row">
+                            <label>Type :</label>
+                            <select id="uvSmoothType" onchange="uvUpdatePlot()" style="flex:1;">
+                                <option value="savgol">Savitzky-Golay</option>
+                                <option value="gaussian">Gaussien</option>
+                                <option value="moving">Moyenne mobile</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Plage</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>X min :</label>
+                            <input type="number" id="uvXMin" step="1" placeholder="auto" onchange="uvUpdatePlot()">
+                            <label style="min-width:auto;">max :</label>
+                            <input type="number" id="uvXMax" step="1" placeholder="auto" onchange="uvUpdatePlot()">
+                        </div>
+                        <div class="control-row">
+                            <label>Y min :</label>
+                            <input type="number" id="uvYMin" step="0.01" placeholder="auto" onchange="uvUpdatePlot()">
+                            <label style="min-width:auto;">max :</label>
+                            <input type="number" id="uvYMax" step="0.01" placeholder="auto" onchange="uvUpdatePlot()">
+                        </div>
+                        <button class="btn" onclick="['uvXMin','uvXMax','uvYMin','uvYMax'].forEach(id=>document.getElementById(id).value=''); uvUpdatePlot();">Réinitialiser</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Décalage vertical</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Offset :</label>
+                            <input type="number" id="uvOffset" value="0" step="0.1" style="width:70px;" onchange="uvUpdatePlot()">
+                        </div>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="uvAutoOffset" onchange="uvUpdatePlot()">
+                            Auto-offset
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>λmax détectés</h3>
+                    <div id="uvPeaksTable"></div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Export</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Fond :</label>
+                            <select id="uvExportBg" style="flex:1;">
+                                <option value="dark">Sombre (écran)</option>
+                                <option value="white">Blanc (impression)</option>
+                                <option value="transparent">Transparent</option>
+                            </select>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn" onclick="uvExportImage('png')">PNG</button>
+                            <button class="btn" onclick="uvExportImage('svg')">SVG</button>
+                            <button class="btn" onclick="uvExportCSV()">CSV</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="plot-container">
+                <div id="uvPlot" style="width:100%;height:100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         PLATE READER TAB
+         ========================================================= -->
+    <div class="tab-content" id="tab-plate">
+        <div class="main-container">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>Fichier plate reader</h3>
+                    <div class="drop-zone" id="prDropZone">
+                        <div class="icon">🧫</div>
+                        <div>Glisser-déposer fichier plate reader</div>
+                        <p>Format .xls/.txt tab-séparé ou CSV #metadata</p>
+                    </div>
+                    <input type="file" id="prFileInput" accept=".xls,.xlsx,.txt,.csv">
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Plaques détectées</h3>
+                    <div class="plate-list" id="prPlateList">
+                        <div style="font-size:0.92em; color:#666;">Aucune plaque chargée</div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Colonnes / Puits</h3>
+                    <div style="display:flex; gap:4px; margin-bottom:6px;">
+                        <button class="btn" style="flex:1; font-size:0.92em;" onclick="prSelectAll()">Tout sél.</button>
+                        <button class="btn" style="flex:1; font-size:0.92em;" onclick="prSelectNone()">Aucun</button>
+                    </div>
+                    <div class="column-list" id="prColumnList">
+                        <div style="font-size:0.92em; color:#666;">Sélectionnez une plaque</div>
+                    </div>
+                    <div style="margin-top:8px; font-size:0.92em; color:#888;">
+                        Cliquer "B" pour définir comme blanc · Double-clic pour renommer
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Blanc</h3>
+                    <div id="prBlankInfo" style="font-size:0.92em; color:#888;">Aucun blanc sélectionné</div>
+                    <div style="margin-top:5px; display:flex; gap:6px;">
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="prSubtractBlank" checked onchange="prUpdatePlot()">
+                            Soustraire
+                        </label>
+                        <button class="btn" style="font-size:0.92em;" onclick="prClearBlank()">Retirer blanc</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Vue</h3>
+                    <div class="view-mode-bar">
+                        <button class="btn active" id="prViewAll" onclick="prSetView('all')">Tous</button>
+                        <button class="btn" id="prViewSingle" onclick="prSetView('single')">Un par un</button>
+                        <button class="btn" id="prViewSel" onclick="prSetView('selection')">Sélection</button>
+                    </div>
+                    <div class="nav-bar" id="prNavBar" style="display:none;">
+                        <button class="btn" onclick="prPrev()">◀</button>
+                        <div class="nav-label" id="prNavLabel">- / -</div>
+                        <button class="btn" onclick="prNext()">▶</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Titre</h3>
+                    <input type="text" id="prTitle" value="Spectres d'émission" style="width:100%;" oninput="prUpdatePlot()">
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Affichage</h3>
+                    <div class="controls-group">
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="prNormalize" onchange="prUpdatePlot()">
+                            Normaliser (0-1)
+                        </label>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="prGrid" checked onchange="prUpdatePlot()">
+                            Grille
+                        </label>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="prShowPeaks" checked onchange="prUpdatePlot()">
+                            Afficher λmax
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Lissage</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Fenêtre :</label>
+                            <span id="prSmoothVal" style="font-size:0.92em; color:#4ecca3;">0</span>
+                        </div>
+                        <input type="range" class="slider" id="prSmoothSlider" min="0" max="25" value="0" step="1" oninput="document.getElementById('prSmoothVal').textContent=this.value; prUpdatePlot();">
+                        <div class="control-row">
+                            <label>Type :</label>
+                            <select id="prSmoothType" onchange="prUpdatePlot()" style="flex:1;">
+                                <option value="savgol">Savitzky-Golay</option>
+                                <option value="gaussian">Gaussien</option>
+                                <option value="moving">Moyenne mobile</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>λmax détectés</h3>
+                    <div id="prPeaksTable"></div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Export</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Fond :</label>
+                            <select id="prExportBg" style="flex:1;">
+                                <option value="dark">Sombre (écran)</option>
+                                <option value="white">Blanc (impression)</option>
+                                <option value="transparent">Transparent</option>
+                            </select>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn" onclick="prExportImage('png')" title="Export graphique PNG">PNG</button>
+                            <button class="btn" onclick="prExportImage('svg')" title="Export graphique SVG">SVG</button>
+                            <button class="btn" onclick="prExportCSV()" title="CSV global (toutes colonnes)">CSV</button>
+                            <button class="btn" onclick="prExportSplitCSV()" title="1 fichier CSV par composé">Split CSV</button>
+                            <button class="btn" onclick="prExportLambdaMax()" title="Tableau des λmax">λmax</button>
+                            <button class="btn" onclick="prExportAll()" title="Exporter tout (PNG + CSV + Split CSV + λmax)" style="background:rgba(139,92,246,0.3);">Exporter tout</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="plot-container">
+                <div id="prPlot" style="width:100%;height:100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-bar">
+        <div id="infoText">Prêt. Glissez-déposez des fichiers pour commencer.</div>
+        <div>Curseur: <span id="cursorPos">-</span></div>
+    </div>
+
+    <script>
+    // ============================================================
+    // SHARED UTILITIES
+    // ============================================================
+    const COLORS = [
+        '#8b5cf6', '#4ecca3', '#f472b6', '#f4a261', '#60a5fa',
+        '#e94560', '#34d399', '#fbbf24', '#a78bfa', '#fb923c',
+        '#c084fc', '#2dd4bf', '#f87171', '#a3e635', '#38bdf8'
+    ];
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        event.target.classList.add('active');
+        requestAnimationFrame(() => {
+            if (tab === 'uvvis') { Plotly.Plots.resize('uvPlot'); uvUpdatePlot(); }
+            else { Plotly.Plots.resize('prPlot'); prUpdatePlot(); }
+        });
+    }
+
+    function smoothData(data, windowSize, type) {
+        if (windowSize < 1) return data.slice();
+        const w = windowSize * 2 + 1;
+        if (w > data.length) return data.slice();
+        const result = new Array(data.length);
+
+        if (type === 'gaussian') {
+            const sigma = w / 4;
+            const kernel = [];
+            let sum = 0;
+            for (let i = -windowSize; i <= windowSize; i++) {
+                const val = Math.exp(-0.5 * (i / sigma) ** 2);
+                kernel.push(val); sum += val;
+            }
+            kernel.forEach((_, i) => kernel[i] /= sum);
+            for (let i = 0; i < data.length; i++) {
+                let s = 0, c = 0;
+                for (let j = 0; j < kernel.length; j++) {
+                    const idx = i - windowSize + j;
+                    if (idx >= 0 && idx < data.length) { s += data[idx] * kernel[j]; c += kernel[j]; }
+                }
+                result[i] = s / c;
+            }
+        } else if (type === 'moving') {
+            for (let i = 0; i < data.length; i++) {
+                let s = 0, c = 0;
+                for (let j = -windowSize; j <= windowSize; j++) {
+                    const idx = i + j;
+                    if (idx >= 0 && idx < data.length) { s += data[idx]; c++; }
+                }
+                result[i] = s / c;
+            }
+        } else { // savgol
+            for (let i = 0; i < data.length; i++) {
+                let s = 0, c = 0;
+                for (let j = -windowSize; j <= windowSize; j++) {
+                    const idx = i + j;
+                    if (idx >= 0 && idx < data.length) {
+                        const weight = windowSize + 1 - Math.abs(j);
+                        s += data[idx] * weight; c += weight;
+                    }
+                }
+                result[i] = s / c;
+            }
+        }
+        return result;
+    }
+
+    function interpolateSpectrum(xTarget, xSource, ySource) {
+        let xs = xSource.slice(), ys = ySource.slice();
+        if (xs.length > 1 && xs[0] > xs[xs.length - 1]) { xs.reverse(); ys.reverse(); }
+        return xTarget.map(xt => {
+            if (xt <= xs[0]) return ys[0];
+            if (xt >= xs[xs.length - 1]) return ys[ys.length - 1];
+            let lo = 0, hi = xs.length - 1;
+            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xs[mid] <= xt) lo = mid; else hi = mid; }
+            const t = (xt - xs[lo]) / (xs[hi] - xs[lo]);
+            return ys[lo] + t * (ys[hi] - ys[lo]);
+        });
+    }
+
+    function normalizeMinMax(data) {
+        const max = Math.max(...data), min = Math.min(...data);
+        const range = max - min || 1;
+        return data.map(v => (v - min) / range);
+    }
+
+    function findPeaks(x, y, thresholdPct) {
+        if (x.length < 3) return [];
+        const maxY = Math.max(...y);
+        const minHeight = maxY * ((thresholdPct || 10) / 100);
+        const peaks = [];
+        for (let i = 1; i < y.length - 1; i++) {
+            if (y[i] > y[i - 1] && y[i] > y[i + 1] && y[i] > minHeight) {
+                peaks.push({ x: x[i], y: y[i] });
+            }
+        }
+        peaks.sort((a, b) => b.y - a.y);
+        const filtered = [];
+        for (const p of peaks) {
+            if (!filtered.some(f => Math.abs(f.x - p.x) < 15)) filtered.push(p);
+        }
+        return filtered.slice(0, 10).sort((a, b) => b.y - a.y);
+    }
+
+    function getExportColors(bgMode) {
+        if (bgMode === 'white') return { paper: '#ffffff', plot: '#ffffff', font: '#222222', grid: '#cccccc', zero: '#999999' };
+        if (bgMode === 'transparent') return { paper: 'rgba(0,0,0,0)', plot: 'rgba(0,0,0,0)', font: '#222222', grid: '#cccccc', zero: '#999999' };
+        return { paper: '#1a1a2e', plot: '#1a1a2e', font: '#e0e0e0', grid: '#2a2a4a', zero: '#2a2a4a' };
+    }
+
+    function makeLayout(title, showGrid, bgColors, xRange, yRange, yTitle) {
+        return {
+            paper_bgcolor: bgColors.paper, plot_bgcolor: bgColors.plot,
+            font: { color: bgColors.font, family: 'Segoe UI' },
+            title: { text: title, font: { size: 15, color: bgColors.font }, xref: 'paper', x: 0.5, xanchor: 'center' },
+            xaxis: {
+                title: { text: 'Longueur d\'onde (nm)', font: { size: 13 } },
+                tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent',
+                zerolinecolor: bgColors.zero,
+                range: xRange || undefined
+            },
+            yaxis: {
+                title: { text: yTitle || 'Absorbance', font: { size: 13 } },
+                tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent',
+                zerolinecolor: bgColors.zero,
+                range: yRange || undefined
+            },
+            legend: { bgcolor: 'rgba(0,0,0,0.05)', borderwidth: 0, font: { size: 11 } },
+            margin: { l: 65, r: 20, t: 45, b: 50 },
+            hovermode: 'x unified', dragmode: 'zoom'
+        };
+    }
+
+    function renderPeaksTableHTML(allPeaks) {
+        if (allPeaks.length === 0) return '<p style="font-size:0.92em;color:#888;">Aucun pic détecté</p>';
+        let html = '<table class="peaks-table"><tr><th>Spectre</th><th>λmax (nm)</th><th>Intensité</th></tr>';
+        for (const { label, color, peaks } of allPeaks) {
+            for (let i = 0; i < Math.min(peaks.length, 3); i++) {
+                const p = peaks[i];
+                const name = i === 0 ? `<b>${label}</b>` : label;
+                html += `<tr><td>${name}</td><td style="color:${color}">${p.x.toFixed(1)}</td><td>${p.y.toFixed(4)}</td></tr>`;
+            }
+        }
+        return html + '</table>';
+    }
+
+    function downloadCSVBlob(csv, filename) {
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click(); URL.revokeObjectURL(a.href);
+    }
+
+    function scaleLayoutFonts(obj, scale) {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) { obj.forEach(item => scaleLayoutFonts(item, scale)); return; }
+        for (const [key, val] of Object.entries(obj)) {
+            if ((key === 'font' || key === 'tickfont') && val && typeof val.size === 'number') {
+                val.size = Math.round(val.size * scale);
+            } else if (typeof val === 'object') {
+                scaleLayoutFonts(val, scale);
+            }
+        }
+    }
+
+    function exportImageWithBg(plotId, bgMode, tracesBuilder, layoutBuilder, filename, format) {
+        const bgColors = getExportColors(bgMode);
+        const traces = tracesBuilder(bgColors);
+        const layout = layoutBuilder(bgColors);
+        // Scale fonts for export readability (SVG/PNG pasted in Word)
+        scaleLayoutFonts(layout, 2.5);
+        if (layout.margin) {
+            layout.margin.l = Math.round((layout.margin.l || 65) * 1.6);
+            layout.margin.b = Math.round((layout.margin.b || 50) * 1.6);
+            layout.margin.t = Math.round((layout.margin.t || 45) * 1.4);
+        }
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px';
+        document.body.appendChild(tempDiv);
+        Plotly.newPlot(tempDiv, traces, layout).then(() => {
+            Plotly.downloadImage(tempDiv, { format, width: 1600, height: 900, scale: 2, filename }).then(() => {
+                Plotly.purge(tempDiv); tempDiv.remove();
+            });
+        });
+    }
+
+    // ============================================================
+    // UV-VIS TAB
+    // ============================================================
+    let uvDatasets = [];
+    let uvBlankData = null;
+
+    function uvParseCSV_CCA(text, fileName) {
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 3) return [];
+        const sampleNames = lines[0].split(',').map(s => s.trim()).filter(Boolean);
+        const results = [];
+        let colIdx = 0, sampleIdx = 0;
+        while (colIdx < lines[1].split(',').length - 1) {
+            const x = [], y = [];
+            for (let row = 2; row < lines.length; row++) {
+                const cells = lines[row].split(',');
+                const wl = parseFloat(cells[colIdx]), abs = parseFloat(cells[colIdx + 1]);
+                if (!isNaN(wl) && !isNaN(abs)) { x.push(wl); y.push(abs); }
+            }
+            if (x.length > 0) {
+                const name = sampleIdx < sampleNames.length && sampleNames[sampleIdx] ? sampleNames[sampleIdx] : `Échantillon ${sampleIdx + 1}`;
+                results.push({ label: name, fileName, x, y, xunits: 'nm', yunits: 'Abs', visible: true, color: COLORS[(uvDatasets.length + results.length) % COLORS.length], lineStyle: 'solid' });
+                sampleIdx++;
+            }
+            colIdx += 2;
+        }
+        return results;
+    }
+
+    function uvParseCSV_Generic(text, fileName) {
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 2) return [];
+        const sep = lines[0].includes('\t') ? '\t' : ',';
+        const headers = lines[0].split(sep).map(s => s.trim());
+        const firstRowNumeric = headers.every(h => !isNaN(parseFloat(h)) || h === '');
+        const dataStart = firstRowNumeric ? 0 : 1;
+        const colNames = firstRowNumeric ? headers.map((_, i) => i === 0 ? 'Wavelength' : `Series ${i}`) : headers;
+        const results = [];
+        for (let col = 1; col < colNames.length; col++) {
+            if (!colNames[col]) continue;
+            const x = [], y = [];
+            for (let row = dataStart; row < lines.length; row++) {
+                const cells = lines[row].split(sep);
+                const wl = parseFloat(cells[0]), val = parseFloat(cells[col]);
+                if (!isNaN(wl) && !isNaN(val)) { x.push(wl); y.push(val); }
+            }
+            if (x.length > 0) {
+                results.push({ label: colNames[col], fileName, x, y, xunits: 'nm', yunits: 'a.u.', visible: true, color: COLORS[(uvDatasets.length + results.length) % COLORS.length], lineStyle: 'solid' });
+            }
+        }
+        return results;
+    }
+
+    function uvParseCSV_PlateReaderCSV(text, fileName) {
+        const lines = text.split('\n');
+        let dataStartIdx = 0;
+        for (let i = 0; i < lines.length; i++) {
+            if (!lines[i].trim().startsWith('#')) { dataStartIdx = i; break; }
+        }
+        const dataLines = lines.slice(dataStartIdx).filter(l => l.trim());
+        if (dataLines.length < 2) return [];
+        const headers = dataLines[0].split(',').map(h => h.trim());
+        const wlIdx = headers.indexOf('Wavelength');
+        if (wlIdx === -1) return [];
+        const results = [];
+        for (let col = 0; col < headers.length; col++) {
+            if (col === wlIdx || !headers[col]) continue;
+            const x = [], y = [];
+            for (let r = 1; r < dataLines.length; r++) {
+                const cells = dataLines[r].split(',');
+                const wl = parseFloat(cells[wlIdx]), val = parseFloat(cells[col]);
+                if (!isNaN(wl) && !isNaN(val)) { x.push(wl); y.push(val); }
+            }
+            if (x.length > 0) {
+                results.push({ label: headers[col], fileName, x, y, xunits: 'nm', yunits: 'Fluorescence', visible: true, color: COLORS[(uvDatasets.length + results.length) % COLORS.length], lineStyle: 'solid' });
+            }
+        }
+        return results;
+    }
+
+    function uvParseCSV(text, fileName) {
+        const firstLine = text.split('\n')[0].trim();
+        if (firstLine.startsWith('#')) return uvParseCSV_PlateReaderCSV(text, fileName);
+        const cca = uvParseCSV_CCA(text, fileName);
+        return cca.length > 0 ? cca : uvParseCSV_Generic(text, fileName);
+    }
+
+    function uvHandleFiles(files) {
+        for (const file of files) {
+            if (!file.name.match(/\.(csv|txt)$/i)) continue;
+            const reader = new FileReader();
+            reader.onload = e => {
+                const parsed = uvParseCSV(e.target.result, file.name.replace(/\.[^/.]+$/, ''));
+                uvDatasets.push(...parsed);
+                uvRenderFileList(); uvUpdatePlot();
+            };
+            reader.readAsText(file);
+        }
+    }
+
+    function uvHandleBlankFile(files) {
+        const file = files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const parsed = uvParseCSV(e.target.result, file.name);
+            if (parsed.length > 0) {
+                uvBlankData = { x: parsed[0].x, y: parsed[0].y, name: parsed[0].label };
+                document.getElementById('uvBlankZone').textContent = `Blanc: ${uvBlankData.name}`;
+                document.getElementById('uvBlankZone').classList.add('has-blank');
+                uvUpdatePlot();
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function uvRenderFileList() {
+        const container = document.getElementById('uvFileList');
+        container.innerHTML = '';
+        uvDatasets.forEach((ds, idx) => {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            div.innerHTML = `
+                <div class="color-dot" style="background:${ds.color}" title="Couleur"></div>
+                <div class="file-name" title="${ds.label}" ondblclick="uvRename(${idx})">${ds.label}</div>
+                <select class="style-select" onchange="uvDatasets[${idx}].lineStyle=this.value; uvUpdatePlot();">
+                    <option value="solid" ${ds.lineStyle==='solid'?'selected':''}>━</option>
+                    <option value="dash" ${ds.lineStyle==='dash'?'selected':''}>╌╌</option>
+                    <option value="dashdot" ${ds.lineStyle==='dashdot'?'selected':''}>╌·</option>
+                    <option value="dot" ${ds.lineStyle==='dot'?'selected':''}>···</option>
+                </select>
+                <div class="file-actions">
+                    <button class="${ds.visible ? 'active' : ''}" onclick="uvDatasets[${idx}].visible=!uvDatasets[${idx}].visible; uvRenderFileList(); uvUpdatePlot();">
+                        ${ds.visible ? '👁' : '👁‍🗨'}
+                    </button>
+                    <button onclick="uvDatasets.splice(${idx},1); uvRenderFileList(); uvUpdatePlot();">✕</button>
+                </div>
+            `;
+            const dot = div.querySelector('.color-dot');
+            const picker = document.createElement('input');
+            picker.type = 'color'; picker.className = 'color-picker-hidden';
+            picker.value = ds.color;
+            picker.addEventListener('input', e => { ds.color = e.target.value; dot.style.background = e.target.value; uvUpdatePlot(); });
+            div.appendChild(picker);
+            dot.addEventListener('click', () => picker.click());
+            container.appendChild(div);
+        });
+    }
+
+    function uvRename(idx) {
+        const name = prompt('Nouveau nom :', uvDatasets[idx].label);
+        if (name) { uvDatasets[idx].label = name; uvRenderFileList(); uvUpdatePlot(); }
+    }
+
+    function uvApplyTransform(ds, idx) {
+        let x = ds.x.slice(), y = ds.y.slice();
+        if (uvBlankData && document.getElementById('uvSubtractBlank').checked) {
+            const blankInterp = interpolateSpectrum(x, uvBlankData.x, uvBlankData.y);
+            y = y.map((v, i) => v - blankInterp[i]);
+        }
+        const smooth = parseInt(document.getElementById('uvSmoothSlider').value);
+        if (smooth > 0) y = smoothData(y, smooth, document.getElementById('uvSmoothType').value);
+        if (document.getElementById('uvNormalize').checked) y = normalizeMinMax(y);
+        const autoOffset = document.getElementById('uvAutoOffset').checked;
+        const globalOffset = parseFloat(document.getElementById('uvOffset').value) || 0;
+        let offset = 0;
+        if (autoOffset) offset = idx * (Math.max(...y) * 0.3 + 0.1);
+        else if (globalOffset > 0) offset = idx * globalOffset;
+        if (offset) y = y.map(v => v + offset);
+        return { x, y };
+    }
+
+    function uvUpdatePlot() {
+        const traces = [], annotations = [];
+        const showPeaks = document.getElementById('uvShowPeaks').checked;
+        const peakThreshold = parseFloat(document.getElementById('uvPeakThreshold').value) || 10;
+        const showGrid = document.getElementById('uvGrid').checked;
+        const visible = uvDatasets.filter(d => d.visible);
+        const allPeaks = [];
+
+        visible.forEach((ds, idx) => {
+            const { x, y } = uvApplyTransform(ds, idx);
+            traces.push({ x, y, type: 'scattergl', mode: 'lines', name: ds.label, line: { color: ds.color, width: 2, dash: ds.lineStyle }, hovertemplate: 'λ=%{x:.1f}nm<br>%{y:.4f}<extra>' + ds.label + '</extra>' });
+            if (showPeaks) {
+                const peaks = findPeaks(x, y, peakThreshold);
+                if (peaks.length > 0) {
+                    allPeaks.push({ label: ds.label, color: ds.color, peaks });
+                    traces.push({ x: peaks.map(p => p.x), y: peaks.map(p => p.y), type: 'scatter', mode: 'markers', marker: { color: ds.color, size: 8, symbol: 'diamond' }, showlegend: false });
+                    peaks.forEach((p, i) => {
+                        annotations.push({ x: p.x, y: p.y, text: i === 0 ? `λmax: ${p.x.toFixed(1)}nm` : `${p.x.toFixed(1)}nm`, showarrow: true, arrowhead: 0, arrowsize: 0.5, arrowwidth: 1, arrowcolor: ds.color, ax: 0, ay: -28, font: { size: 9, color: ds.color }, bgcolor: 'rgba(26,26,46,0.85)', borderpad: 2 });
+                    });
+                }
+            }
+        });
+
+        let yTitle = visible.length > 0 ? (visible[0].yunits || 'Abs') : 'Absorbance';
+        if (document.getElementById('uvNormalize').checked) yTitle = 'Intensité relative';
+
+        const xMin = document.getElementById('uvXMin').value, xMax = document.getElementById('uvXMax').value;
+        const yMin = document.getElementById('uvYMin').value, yMax = document.getElementById('uvYMax').value;
+        const bgColors = getExportColors('dark');
+
+        const layout = makeLayout(document.getElementById('uvTitle').value, showGrid, bgColors,
+            xMin && xMax ? [parseFloat(xMin), parseFloat(xMax)] : null,
+            yMin && yMax ? [parseFloat(yMin), parseFloat(yMax)] : null, yTitle);
+        layout.annotations = annotations;
+
+        Plotly.react('uvPlot', traces, layout, { responsive: true, displaylogo: false });
+        requestAnimationFrame(() => Plotly.Plots.resize('uvPlot'));
+        document.getElementById('uvPeaksTable').innerHTML = renderPeaksTableHTML(allPeaks);
+        document.getElementById('infoText').textContent = `UV-Vis: ${uvDatasets.length} spectre(s)`;
+    }
+
+    function uvExportImage(format) {
+        const bgMode = document.getElementById('uvExportBg').value;
+        const showPeaks = document.getElementById('uvShowPeaks').checked;
+        const peakThreshold = parseFloat(document.getElementById('uvPeakThreshold').value) || 10;
+        const showGrid = document.getElementById('uvGrid').checked;
+        const visible = uvDatasets.filter(d => d.visible);
+        let exportAnnotations = [];
+
+        exportImageWithBg('uvPlot', bgMode,
+            (bgColors) => {
+                const tr = [];
+                exportAnnotations = [];
+                visible.forEach((ds, idx) => {
+                    const { x, y } = uvApplyTransform(ds, idx);
+                    tr.push({ x, y, type: 'scatter', mode: 'lines', name: ds.label, line: { color: ds.color, width: 2, dash: ds.lineStyle } });
+                    if (showPeaks) {
+                        const peaks = findPeaks(x, y, peakThreshold);
+                        if (peaks.length > 0) {
+                            tr.push({ x: peaks.map(p => p.x), y: peaks.map(p => p.y), type: 'scatter', mode: 'markers', marker: { color: ds.color, size: 8, symbol: 'diamond' }, showlegend: false });
+                            peaks.forEach((p, i) => exportAnnotations.push({ x: p.x, y: p.y, text: i === 0 ? `λmax: ${p.x.toFixed(1)}nm` : `${p.x.toFixed(1)}nm`, showarrow: true, arrowhead: 0, arrowsize: 0.5, arrowwidth: 1, arrowcolor: ds.color, ax: 0, ay: -28, font: { size: 9, color: ds.color }, bgcolor: 'rgba(255,255,255,0.85)', borderpad: 2 }));
+                        }
+                    }
+                });
+                return tr;
+            },
+            (bgColors) => {
+                let yTitle = visible.length > 0 ? (visible[0].yunits || 'Abs') : 'Absorbance';
+                if (document.getElementById('uvNormalize').checked) yTitle = 'Intensité relative';
+                const layout = makeLayout(document.getElementById('uvTitle').value, showGrid, bgColors, null, null, yTitle);
+                layout.annotations = exportAnnotations;
+                return layout;
+            },
+            'uv_vis_spectrum', format
+        );
+    }
+
+    function uvExportCSV() {
+        const visible = uvDatasets.filter(d => d.visible);
+        if (visible.length === 0) return;
+        let csv = 'Wavelength_nm';
+        visible.forEach(ds => csv += ',' + ds.label);
+        csv += '\n';
+        const ref = visible[0];
+        for (let i = 0; i < ref.x.length; i++) {
+            csv += ref.x[i].toFixed(2);
+            visible.forEach(ds => {
+                let closest = 0, minDiff = Infinity;
+                for (let j = 0; j < ds.x.length; j++) {
+                    const diff = Math.abs(ds.x[j] - ref.x[i]);
+                    if (diff < minDiff) { minDiff = diff; closest = j; }
+                }
+                csv += ',' + ds.y[closest].toFixed(6);
+            });
+            csv += '\n';
+        }
+        downloadCSVBlob(csv, 'uv_vis_data.csv');
+    }
+
+    // UV-Vis event listeners
+    (function() {
+        const dz = document.getElementById('uvDropZone'), fi = document.getElementById('uvFileInput');
+        const bz = document.getElementById('uvBlankZone'), bi = document.getElementById('uvBlankInput');
+        dz.addEventListener('click', () => fi.click());
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); uvHandleFiles(e.dataTransfer.files); });
+        fi.addEventListener('change', e => uvHandleFiles(e.target.files));
+        bz.addEventListener('click', () => bi.click());
+        bz.addEventListener('dragover', e => { e.preventDefault(); bz.classList.add('dragover'); });
+        bz.addEventListener('dragleave', () => bz.classList.remove('dragover'));
+        bz.addEventListener('drop', e => { e.preventDefault(); bz.classList.remove('dragover'); uvHandleBlankFile(e.dataTransfer.files); });
+        bi.addEventListener('change', e => uvHandleBlankFile(e.target.files));
+    })();
+
+
+    // ============================================================
+    // PLATE READER TAB
+    // ============================================================
+    let prPlates = [];       // [{ number, wavelengths, columns: [{id, origName, customName, data[], color, visible}], blankColId }]
+    let prCurrentPlate = -1;
+    let prViewMode = 'all';
+    let prSingleIdx = 0;
+
+    function prParseFile(text) {
+        const plates = [];
+        const lines = text.split(/\r?\n/);
+        let currentBlock = [];
+        let inBlock = false;
+        let plateNum = 0;
+
+        for (const line of lines) {
+            const stripped = line.replace(/\r/g, '').trim();
+
+            if (/Wavelength/i.test(stripped) && /Temperature/i.test(stripped)) {
+                inBlock = true;
+                currentBlock = [stripped];
+                plateNum++;
+                continue;
+            }
+
+            if (inBlock) {
+                if (stripped === '' || /^~End/i.test(stripped) || /^Plate:/i.test(stripped)) {
+                    if (currentBlock.length > 1) plates.push(prCleanBlock(currentBlock, plateNum));
+                    currentBlock = [];
+                    inBlock = false;
+                    continue;
+                }
+                const parts = stripped.split('\t');
+                if (parts.length > 0 && !isNaN(parseFloat(parts[0]))) {
+                    currentBlock.push(stripped);
+                }
+            }
+        }
+        if (currentBlock.length > 1) plates.push(prCleanBlock(currentBlock, plateNum));
+
+        // Fallback: CSV with # metadata
+        if (plates.length === 0) {
+            const csvPlate = prParseCSVFormat(text);
+            if (csvPlate) plates.push(csvPlate);
+        }
+
+        return plates;
+    }
+
+    function prCleanBlock(blockLines, plateNum) {
+        const headers = blockLines[0].split('\t').map(h => h.trim());
+        const dataRows = blockLines.slice(1).map(l => l.split('\t'));
+        const wavelengths = [];
+        const colData = {};
+        const skipCols = new Set();
+        headers.forEach((h, i) => { if (/Temperature|Wavelength/i.test(h)) skipCols.add(i); });
+        const dataCols = [];
+        headers.forEach((h, i) => { if (!skipCols.has(i) && h) dataCols.push({ idx: i, name: h }); });
+        const wlIdx = headers.findIndex(h => /Wavelength/i.test(h));
+
+        for (const row of dataRows) {
+            const wl = parseFloat(row[wlIdx]);
+            if (isNaN(wl)) continue;
+            wavelengths.push(wl);
+            for (const dc of dataCols) {
+                if (!colData[dc.name]) colData[dc.name] = [];
+                const val = parseFloat(row[dc.idx]);
+                colData[dc.name].push(isNaN(val) ? 0 : val);
+            }
+        }
+
+        const columns = [];
+        let colorIdx = 0;
+        for (const dc of dataCols) {
+            const data = colData[dc.name];
+            if (!data || data.length === 0) continue;
+            if (data.reduce((a, b) => a + Math.abs(b), 0) === 0) continue;
+            columns.push({ id: dc.name, origName: dc.name, customName: dc.name, data: data.slice(0, wavelengths.length), color: COLORS[colorIdx % COLORS.length], visible: true });
+            colorIdx++;
+        }
+        return { number: plateNum, wavelengths, columns, blankColId: null };
+    }
+
+    function prParseCSVFormat(text) {
+        const lines = text.split('\n');
+        let dataStartIdx = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#')) dataStartIdx = i + 1;
+            else break;
+        }
+        const dataLines = lines.slice(dataStartIdx).filter(l => l.trim());
+        if (dataLines.length < 2) return null;
+        const headers = dataLines[0].split(',').map(h => h.trim());
+        const wlIdx = headers.indexOf('Wavelength');
+        if (wlIdx === -1) return null;
+
+        const wavelengths = [];
+        const colData = {};
+        for (let r = 1; r < dataLines.length; r++) {
+            const cells = dataLines[r].split(',');
+            const wl = parseFloat(cells[wlIdx]);
+            if (isNaN(wl)) continue;
+            wavelengths.push(wl);
+            for (let c = 0; c < headers.length; c++) {
+                if (c === wlIdx || !headers[c]) continue;
+                if (!colData[headers[c]]) colData[headers[c]] = [];
+                colData[headers[c]].push(parseFloat(cells[c]) || 0);
+            }
+        }
+
+        const columns = [];
+        let colorIdx = 0;
+        for (const h of headers) {
+            if (h === 'Wavelength' || !colData[h]) continue;
+            columns.push({ id: h, origName: h, customName: h, data: colData[h].slice(0, wavelengths.length), color: COLORS[colorIdx % COLORS.length], visible: true });
+            colorIdx++;
+        }
+        return columns.length > 0 ? { number: 1, wavelengths, columns, blankColId: null } : null;
+    }
+
+    function prLoadFile(file) {
+        const tryEncodings = file.name.match(/\.xls$/i) ? ['utf-16le', 'utf-8', 'latin1'] : ['utf-8', 'latin1'];
+
+        function tryRead(encIdx) {
+            const r = new FileReader();
+            r.onload = e => {
+                const plates = prParseFile(e.target.result);
+                if (plates.length > 0) {
+                    prPlates = plates;
+                    prCurrentPlate = 0;
+                    prSingleIdx = 0;
+                    prRenderPlateList();
+                    prRenderColumnList();
+                    prUpdatePlot();
+                    document.getElementById('infoText').textContent = `Plate Reader: ${plates.length} plaque(s) chargée(s) depuis ${file.name}`;
+                } else if (encIdx + 1 < tryEncodings.length) {
+                    tryRead(encIdx + 1);
+                } else {
+                    alert('Aucune plaque détectée dans le fichier. Vérifiez le format.');
+                }
+            };
+            r.readAsText(file, tryEncodings[encIdx]);
+        }
+        tryRead(0);
+    }
+
+    function prRenderPlateList() {
+        const container = document.getElementById('prPlateList');
+        container.innerHTML = '';
+        prPlates.forEach((plate, idx) => {
+            const div = document.createElement('div');
+            div.className = 'plate-item' + (idx === prCurrentPlate ? ' selected' : '');
+            div.innerHTML = `<span>Plaque ${plate.number}</span><span style="color:#888;">${plate.columns.length} puits</span>`;
+            div.addEventListener('click', () => {
+                prCurrentPlate = idx;
+                prSingleIdx = 0;
+                prRenderPlateList();
+                prRenderColumnList();
+                prUpdatePlot();
+            });
+            container.appendChild(div);
+        });
+    }
+
+    function prRenderColumnList() {
+        const container = document.getElementById('prColumnList');
+        container.innerHTML = '';
+        if (prCurrentPlate < 0 || !prPlates[prCurrentPlate]) return;
+        const plate = prPlates[prCurrentPlate];
+
+        plate.columns.forEach((col, idx) => {
+            const div = document.createElement('div');
+            div.className = 'col-item';
+            const isBlank = plate.blankColId === col.id;
+            div.innerHTML = `
+                <input type="checkbox" ${col.visible ? 'checked' : ''} onchange="prPlates[${prCurrentPlate}].columns[${idx}].visible=this.checked; prUpdatePlot();">
+                <div class="color-dot-sm" style="background:${col.color}"></div>
+                <div class="col-label" ondblclick="prRenameCol(${idx})" title="${col.origName}${col.customName !== col.origName ? ' → ' + col.customName : ''}">${col.customName}</div>
+                <div class="col-actions">
+                    ${isBlank
+                        ? '<span class="blank-badge" title="Blanc actuel" onclick="prClearBlank()">B</span>'
+                        : `<button class="blank-set-btn" onclick="prSetBlank(${idx})" title="Définir comme blanc">B</button>`
+                    }
+                </div>
+            `;
+            const dot = div.querySelector('.color-dot-sm');
+            const picker = document.createElement('input');
+            picker.type = 'color'; picker.className = 'color-picker-hidden';
+            picker.value = col.color;
+            picker.addEventListener('input', e => { col.color = e.target.value; dot.style.background = e.target.value; prUpdatePlot(); });
+            div.appendChild(picker);
+            dot.addEventListener('click', () => picker.click());
+            container.appendChild(div);
+        });
+
+        if (plate.blankColId) {
+            const blankCol = plate.columns.find(c => c.id === plate.blankColId);
+            document.getElementById('prBlankInfo').innerHTML = `Blanc: <span style="color:#4ecca3;">${blankCol ? blankCol.customName : plate.blankColId}</span>`;
+        } else {
+            document.getElementById('prBlankInfo').textContent = 'Aucun blanc sélectionné';
+        }
+    }
+
+    function prSetBlank(colIdx) {
+        if (prCurrentPlate < 0) return;
+        prPlates[prCurrentPlate].blankColId = prPlates[prCurrentPlate].columns[colIdx].id;
+        prRenderColumnList();
+        prUpdatePlot();
+    }
+
+    function prClearBlank() {
+        if (prCurrentPlate < 0) return;
+        prPlates[prCurrentPlate].blankColId = null;
+        prRenderColumnList();
+        prUpdatePlot();
+    }
+
+    function prRenameCol(colIdx) {
+        if (prCurrentPlate < 0) return;
+        const col = prPlates[prCurrentPlate].columns[colIdx];
+        const name = prompt('Nouveau nom :', col.customName);
+        if (name) {
+            col.customName = name;
+            prRenderColumnList();
+            prUpdatePlot();
+        }
+    }
+
+    function prSelectAll() {
+        if (prCurrentPlate < 0) return;
+        prPlates[prCurrentPlate].columns.forEach(c => c.visible = true);
+        prRenderColumnList(); prUpdatePlot();
+    }
+
+    function prSelectNone() {
+        if (prCurrentPlate < 0) return;
+        prPlates[prCurrentPlate].columns.forEach(c => c.visible = false);
+        prRenderColumnList(); prUpdatePlot();
+    }
+
+    function prSetView(mode) {
+        prViewMode = mode;
+        document.getElementById('prViewAll').classList.toggle('active', mode === 'all');
+        document.getElementById('prViewSingle').classList.toggle('active', mode === 'single');
+        document.getElementById('prViewSel').classList.toggle('active', mode === 'selection');
+        document.getElementById('prNavBar').style.display = mode === 'single' ? 'flex' : 'none';
+        prUpdateNavLabel();
+        prUpdatePlot();
+    }
+
+    function prGetDisplayCols() {
+        if (prCurrentPlate < 0) return [];
+        const plate = prPlates[prCurrentPlate];
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        return plate.columns.filter(c => !(subtractBlank && c.id === plate.blankColId));
+    }
+
+    function prPrev() {
+        const cols = prGetDisplayCols();
+        if (cols.length === 0) return;
+        prSingleIdx = (prSingleIdx - 1 + cols.length) % cols.length;
+        prUpdateNavLabel(); prUpdatePlot();
+    }
+
+    function prNext() {
+        const cols = prGetDisplayCols();
+        if (cols.length === 0) return;
+        prSingleIdx = (prSingleIdx + 1) % cols.length;
+        prUpdateNavLabel(); prUpdatePlot();
+    }
+
+    function prUpdateNavLabel() {
+        const cols = prGetDisplayCols();
+        if (cols.length === 0) { document.getElementById('prNavLabel').textContent = '- / -'; return; }
+        if (prSingleIdx >= cols.length) prSingleIdx = 0;
+        document.getElementById('prNavLabel').textContent = `${prSingleIdx + 1} / ${cols.length}: ${cols[prSingleIdx].customName}`;
+    }
+
+    function prGetVisibleColumns() {
+        const cols = prGetDisplayCols();
+        if (prViewMode === 'single') {
+            if (prSingleIdx >= cols.length) prSingleIdx = 0;
+            return cols.length > 0 ? [cols[prSingleIdx]] : [];
+        }
+        if (prViewMode === 'selection') return cols.filter(c => c.visible);
+        return cols;
+    }
+
+    function prBuildTracesAndPeaks() {
+        if (prCurrentPlate < 0) return { traces: [], allPeaks: [], annotations: [] };
+        const plate = prPlates[prCurrentPlate];
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        const blankCol = subtractBlank && plate.blankColId ? plate.columns.find(c => c.id === plate.blankColId) : null;
+        const smooth = parseInt(document.getElementById('prSmoothSlider').value);
+        const smoothType = document.getElementById('prSmoothType').value;
+        const normalize = document.getElementById('prNormalize').checked;
+        const showPeaks = document.getElementById('prShowPeaks').checked;
+
+        const visCols = prGetVisibleColumns();
+        const traces = [], annotations = [], allPeaks = [];
+
+        visCols.forEach(col => {
+            let y = col.data.slice();
+            const x = plate.wavelengths.slice();
+            if (blankCol && col.id !== blankCol.id) y = y.map((v, i) => Math.max(0, v - (blankCol.data[i] || 0)));
+            if (smooth > 0) y = smoothData(y, smooth, smoothType);
+            if (normalize) y = normalizeMinMax(y);
+
+            traces.push({ x, y, type: 'scattergl', mode: 'lines', name: col.customName, line: { color: col.color, width: 2 }, hovertemplate: 'λ=%{x:.1f}nm<br>%{y:.4f}<extra>' + col.customName + '</extra>' });
+
+            if (showPeaks) {
+                const peaks = findPeaks(x, y, 10);
+                if (peaks.length > 0) {
+                    allPeaks.push({ label: col.customName, color: col.color, peaks });
+                    traces.push({ x: peaks.map(p => p.x), y: peaks.map(p => p.y), type: 'scatter', mode: 'markers', marker: { color: col.color, size: 8, symbol: 'diamond' }, showlegend: false });
+                    peaks.forEach((p, i) => {
+                        annotations.push({ x: p.x, y: p.y, text: i === 0 ? `λmax: ${p.x.toFixed(0)}nm` : `${p.x.toFixed(0)}nm`, showarrow: true, arrowhead: 0, arrowsize: 0.5, arrowwidth: 1, arrowcolor: col.color, ax: 0, ay: -28, font: { size: 9, color: col.color }, bgcolor: 'rgba(26,26,46,0.85)', borderpad: 2 });
+                    });
+                }
+            }
+        });
+        return { traces, allPeaks, annotations };
+    }
+
+    function prMakeTitle() {
+        if (prCurrentPlate < 0) return 'Chargez un fichier plate reader';
+        const plate = prPlates[prCurrentPlate];
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        const blankCol = subtractBlank && plate.blankColId ? plate.columns.find(c => c.id === plate.blankColId) : null;
+        const smooth = parseInt(document.getElementById('prSmoothSlider').value);
+        let title = document.getElementById('prTitle').value || 'Spectres d\'émission';
+        title += ` — Plaque ${plate.number}`;
+        if (blankCol) title += ` (blanc: ${blankCol.customName})`;
+        if (smooth > 0) title += ' [lissé]';
+        return title;
+    }
+
+    function prUpdatePlot() {
+        const { traces, allPeaks, annotations } = prBuildTracesAndPeaks();
+        const showGrid = document.getElementById('prGrid').checked;
+        const normalize = document.getElementById('prNormalize').checked;
+        const yTitle = normalize ? 'Intensité relative' : 'Fluorescence (u.a.)';
+        const bgColors = getExportColors('dark');
+        const layout = makeLayout(prMakeTitle(), showGrid, bgColors, null, null, yTitle);
+        layout.annotations = annotations;
+        Plotly.react('prPlot', traces, layout, { responsive: true, displaylogo: false });
+        requestAnimationFrame(() => Plotly.Plots.resize('prPlot'));
+        document.getElementById('prPeaksTable').innerHTML = renderPeaksTableHTML(allPeaks);
+
+        if (prCurrentPlate >= 0)
+            document.getElementById('infoText').textContent = `Plate Reader: Plaque ${prPlates[prCurrentPlate].number} — ${prGetVisibleColumns().length} spectre(s) affichés`;
+    }
+
+    function prExportImage(format) {
+        if (prCurrentPlate < 0) return;
+        const bgMode = document.getElementById('prExportBg').value;
+
+        exportImageWithBg('prPlot', bgMode,
+            (bgColors) => {
+                // Rebuild traces for export (same data, scatter type for SVG compat)
+                const { traces } = prBuildTracesAndPeaks();
+                traces.forEach(t => { if (t.type === 'scattergl') t.type = 'scatter'; });
+                return traces;
+            },
+            (bgColors) => {
+                const showGrid = document.getElementById('prGrid').checked;
+                const normalize = document.getElementById('prNormalize').checked;
+                const yTitle = normalize ? 'Intensité relative' : 'Fluorescence (u.a.)';
+                const layout = makeLayout(prMakeTitle(), showGrid, bgColors, null, null, yTitle);
+                const { annotations } = prBuildTracesAndPeaks();
+                layout.annotations = annotations;
+                return layout;
+            },
+            `plate_${prPlates[prCurrentPlate].number}`, format
+        );
+    }
+
+    function prExportCSV() {
+        if (prCurrentPlate < 0) return;
+        const plate = prPlates[prCurrentPlate];
+        const visCols = prGetVisibleColumns();
+        if (visCols.length === 0) return;
+        let csv = 'Wavelength';
+        visCols.forEach(c => csv += ',' + c.customName);
+        csv += '\n';
+        for (let i = 0; i < plate.wavelengths.length; i++) {
+            csv += plate.wavelengths[i];
+            visCols.forEach(c => csv += ',' + (c.data[i] !== undefined ? c.data[i] : ''));
+            csv += '\n';
+        }
+        downloadCSVBlob(csv, `plate_${plate.number}_data.csv`);
+    }
+
+    function prGetProcessedData(col, plate) {
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        const blankCol = subtractBlank && plate.blankColId ? plate.columns.find(c => c.id === plate.blankColId) : null;
+        const smooth = parseInt(document.getElementById('prSmoothSlider').value);
+        const smoothType = document.getElementById('prSmoothType').value;
+        let y = col.data.slice();
+        if (blankCol && col.id !== blankCol.id) y = y.map((v, i) => Math.max(0, v - (blankCol.data[i] || 0)));
+        if (smooth > 0) y = smoothData(y, smooth, smoothType);
+        return y;
+    }
+
+    function prExportSplitCSV() {
+        if (prCurrentPlate < 0) return;
+        const plate = prPlates[prCurrentPlate];
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        const blankCol = subtractBlank && plate.blankColId ? plate.columns.find(c => c.id === plate.blankColId) : null;
+        const smooth = parseInt(document.getElementById('prSmoothSlider').value);
+        const smoothType = document.getElementById('prSmoothType').value;
+
+        const cols = plate.columns.filter(c => !(subtractBlank && c.id === plate.blankColId));
+        if (cols.length === 0) return;
+
+        // Create a zip-like download: one CSV per compound
+        cols.forEach(col => {
+            const y = prGetProcessedData(col, plate);
+            let csv = '# Plaque: ' + plate.number + '\n';
+            csv += '# Composé: ' + col.customName + ' (colonne: ' + col.origName + ')\n';
+            if (blankCol) csv += '# Blanc soustrait: ' + blankCol.customName + '\n';
+            if (smooth > 0) csv += '# Lissage: ' + smoothType + ', fenêtre=' + smooth + '\n';
+            const peaks = findPeaks(plate.wavelengths, y, 10);
+            if (peaks.length > 0) csv += '# Lambda max: ' + peaks[0].x.toFixed(0) + ' nm\n';
+            csv += '#\nWavelength,' + col.customName + '\n';
+            for (let i = 0; i < plate.wavelengths.length; i++) {
+                csv += plate.wavelengths[i] + ',' + (y[i] !== undefined ? y[i].toFixed(6) : '') + '\n';
+            }
+            const safeName = col.customName.replace(/[^a-zA-Z0-9_\-\s]/g, '').replace(/\s+/g, '_');
+            downloadCSVBlob(csv, `P${plate.number}_${safeName}.csv`);
+        });
+        document.getElementById('infoText').textContent = `${cols.length} fichier(s) CSV exporté(s) individuellement`;
+    }
+
+    function prExportLambdaMax() {
+        if (prCurrentPlate < 0) return;
+        const plate = prPlates[prCurrentPlate];
+        const subtractBlank = document.getElementById('prSubtractBlank').checked;
+        const cols = plate.columns.filter(c => !(subtractBlank && c.id === plate.blankColId));
+        if (cols.length === 0) return;
+
+        const smooth = parseInt(document.getElementById('prSmoothSlider').value);
+        const smoothType = document.getElementById('prSmoothType') ? document.getElementById('prSmoothType').value : 'SG';
+        let csv = '# Lissage: ' + (smooth > 0 ? smoothType + ', fenêtre=' + smooth : 'aucun') + '\n';
+        csv += 'Plaque,Colonne,Nom,Lambda_max_nm,Intensite_max,Lissage_type,Lissage_fenetre\n';
+        cols.forEach(col => {
+            const y = prGetProcessedData(col, plate);
+            const peaks = findPeaks(plate.wavelengths, y, 10);
+            if (peaks.length > 0) {
+                csv += `${plate.number},${col.origName},${col.customName},${peaks[0].x.toFixed(0)},${peaks[0].y.toFixed(2)},${smooth > 0 ? smoothType : 'none'},${smooth}\n`;
+            }
+        });
+        downloadCSVBlob(csv, `plate_${plate.number}_lambda_max.csv`);
+    }
+
+    function prExportAll() {
+        if (prCurrentPlate < 0) return;
+        prExportImage('png');
+        prExportCSV();
+        prExportSplitCSV();
+        prExportLambdaMax();
+        document.getElementById('infoText').textContent = 'Export complet lancé (PNG + CSV + Split CSV + λmax)';
+    }
+
+    // Plate reader event listeners
+    (function() {
+        const dz = document.getElementById('prDropZone'), fi = document.getElementById('prFileInput');
+        dz.addEventListener('click', () => fi.click());
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); if (e.dataTransfer.files[0]) prLoadFile(e.dataTransfer.files[0]); });
+        fi.addEventListener('change', e => { if (e.target.files[0]) prLoadFile(e.target.files[0]); });
+    })();
+
+    // Init
+    requestAnimationFrame(() => {
+        uvUpdatePlot();
+        prUpdatePlot();
+    });
+    window.addEventListener('resize', () => {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'tab-uvvis') Plotly.Plots.resize('uvPlot');
+        else if (activeTab && activeTab.id === 'tab-plate') Plotly.Plots.resize('prPlot');
+    });
+    window.addEventListener('load', () => { requestAnimationFrame(() => { Plotly.Plots.resize('uvPlot'); uvUpdatePlot(); }); });
+    </script>
+</body>
+</html>

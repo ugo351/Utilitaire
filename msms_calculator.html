@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MS/MS Fragment Calculator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e; color: #e0e0e0;
+            height: 100vh; display: flex; flex-direction: column;
+        }
+        header {
+            background: #16213e; padding: 10px 20px;
+            display: flex; align-items: center; gap: 15px;
+            border-bottom: 2px solid #0f3460; flex-shrink: 0;
+        }
+        header h1 { font-size: 1.3em; color: #e94560; white-space: nowrap; }
+        .tabs {
+            display: flex; gap: 2px; background: #0f3460;
+            padding: 0 20px; flex-shrink: 0;
+        }
+        .tab {
+            padding: 10px 20px; cursor: pointer;
+            background: #16213e; color: #888;
+            border: none; font-size: 1em;
+            border-top: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #e0e0e0; }
+        .tab.active { color: #e94560; border-top-color: #e94560; background: #1a1a2e; }
+        .tab-content { display: none; flex: 1; overflow: hidden; }
+        .tab-content.active { display: flex; flex-direction: column; }
+        .main-container { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+        .input-section {
+            background: #16213e; padding: 12px 20px;
+            border-bottom: 1px solid #0f3460; flex-shrink: 0;
+        }
+        .input-row {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 8px; flex-wrap: wrap;
+        }
+        .input-row label {
+            font-size: 0.95em; font-weight: bold; color: #e94560;
+            min-width: 70px;
+        }
+        .input-row input[type="text"], .input-row select {
+            padding: 6px 10px; border: 1px solid #0f3460;
+            border-radius: 4px; background: #1a1a2e;
+            color: #e0e0e0; font-family: 'Consolas', monospace; font-size: 1em;
+        }
+        .input-row input[type="text"] { flex: 1; min-width: 200px; }
+        .input-row .help { font-size: 0.92em; color: #666; }
+        .btn {
+            padding: 8px 16px; border: 1px solid #0f3460; border-radius: 5px;
+            background: rgba(15, 52, 96, 0.5); color: #e0e0e0;
+            cursor: pointer; font-size: 0.95em; transition: all 0.2s;
+        }
+        .btn:hover { background: #0f3460; border-color: #e94560; }
+        .btn.primary { background: #e94560; border-color: #e94560; color: #fff; font-weight: bold; }
+        .btn.primary:hover { background: #c73e55; }
+        .precursor-info {
+            background: rgba(15, 52, 96, 0.3); padding: 8px 20px;
+            font-size: 0.95em; border-bottom: 1px solid #0f3460;
+            display: flex; gap: 20px; flex-wrap: wrap; flex-shrink: 0;
+        }
+        .precursor-info .val { color: #4ecca3; font-weight: bold; }
+        .precursor-info .warn { color: #fbbf24; }
+        .filter-bar {
+            background: #16213e; padding: 8px 20px;
+            display: flex; align-items: center; gap: 12px;
+            flex-wrap: wrap; border-bottom: 1px solid #0f3460; flex-shrink: 0;
+        }
+        .filter-bar label { font-size: 0.92em; }
+        .filter-bar input[type="checkbox"] { accent-color: #e94560; }
+        .filter-sep { width: 1px; height: 20px; background: #0f3460; }
+        .results-container { flex: 1; overflow: auto; padding: 0; }
+        table.results {
+            width: 100%; border-collapse: collapse; font-size: 0.92em;
+        }
+        table.results th {
+            background: #16213e; color: #e94560;
+            padding: 8px 10px; text-align: left;
+            position: sticky; top: 0; z-index: 1;
+            border-bottom: 2px solid #0f3460; cursor: pointer;
+            user-select: none;
+        }
+        table.results th:hover { color: #fff; }
+        table.results td {
+            padding: 6px 10px; border-bottom: 1px solid rgba(15, 52, 96, 0.3);
+        }
+        table.results tr:hover { background: rgba(139, 92, 246, 0.08); }
+        table.results .ion-a { color: #60a5fa; }
+        table.results .ion-b { color: #e94560; }
+        table.results .ion-y { color: #4ecca3; }
+        table.results .has-ss { background: rgba(251, 191, 36, 0.1); }
+        table.results .matched { background: rgba(78, 204, 163, 0.2); font-weight: bold; }
+        table.results .seq { font-family: 'Consolas', monospace; font-size: 1.05em; }
+        .stats-bar {
+            background: #16213e; padding: 6px 20px;
+            font-size: 0.92em; color: #888;
+            border-top: 1px solid #0f3460;
+            display: flex; gap: 20px; flex-shrink: 0;
+        }
+        .stats-bar span { color: #4ecca3; }
+        .mods-row {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.92em; margin-bottom: 4px;
+        }
+        .mods-row select {
+            padding: 4px 6px; border: 1px solid #0f3460;
+            border-radius: 3px; background: #1a1a2e; color: #e0e0e0; font-size: 1em;
+        }
+        .mods-row input {
+            padding: 4px 6px; border: 1px solid #0f3460;
+            border-radius: 3px; background: #1a1a2e; color: #e0e0e0;
+            width: 60px; font-family: 'Consolas', monospace; font-size: 1em;
+        }
+        .mass-list-area {
+            padding: 4px 8px; border: 1px solid #0f3460;
+            border-radius: 4px; background: #1a1a2e; color: #e0e0e0;
+            font-family: 'Consolas', monospace; font-size: 0.95em;
+            width: 100%; min-height: 50px; resize: vertical;
+        }
+        .digest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .digest-grid .full { grid-column: 1 / -1; }
+        .input-group {
+            display: flex; align-items: center; gap: 6px;
+        }
+        .input-group label { font-size: 0.92em; white-space: nowrap; }
+        .input-group input, .input-group select {
+            padding: 4px 8px; border: 1px solid #0f3460;
+            border-radius: 3px; background: #1a1a2e; color: #e0e0e0; font-size: 0.95em;
+        }
+        .input-group input[type="number"] { width: 80px; }
+        .enzyme-desc { font-size: 0.92em; color: #888; margin-left: 10px; }
+        .ss-badge { font-size: 0.92em; padding: 1px 5px; border-radius: 3px; background: rgba(251,191,36,0.2); color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MS/MS Fragment Calculator</h1>
+        <div style="font-size:0.92em; color:#888;">Multi-Chain Peptide Analysis • Bruker MALDI-TOF</div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('msms')">🔬 MS/MS Fragmentation</button>
+        <button class="tab" onclick="switchTab('digest')">✂️ Digest Only</button>
+    </div>
+
+    <div class="main-container">
+        <div class="input-section">
+            <div class="input-row">
+                <label>Chaîne A:</label>
+                <input type="text" id="chainA" value="DNYRCPNPGDAFECFESDATARFCVSGKRGAYVICSKCRRKYEFCANGAKVSKRPEVECRADWASTECTSENSDVPSVMK" placeholder="Séquence en acides aminés">
+            </div>
+            <div class="input-row">
+                <label>Chaîne B:</label>
+                <input type="text" id="chainB" value="FVNQHLCGSHLVEALYLVCGERGFFYTPKT" placeholder="(optionnel)">
+            </div>
+            <div class="input-row">
+                <label>Chaîne C:</label>
+                <input type="text" id="chainC" placeholder="(optionnel)">
+                <label style="min-width:auto;">Chaîne D:</label>
+                <input type="text" id="chainD" placeholder="(optionnel)">
+            </div>
+        </div>
+
+        <!-- ========== MS/MS TAB ========== -->
+        <div class="tab-content active" id="tab-msms">
+            <div class="input-section" style="border-top: 1px solid #0f3460;">
+                <div class="input-row">
+                    <label>Ponts S-S:</label>
+                    <input type="text" id="disulfideBonds" value="A:5-A:14, A:24-A:59, A:35-A:68, A:38-A:45" placeholder="A:6-A:11, A:7-B:7 ou 6-11">
+                    <label class="help">Format: Chaîne:Pos-Chaîne:Pos ou Pos-Pos</label>
+                    <label style="min-width:auto;"><input type="checkbox" id="includeBrokenSS" style="accent-color:#e94560;"> Inclure fragments rompant S-S</label>
+                </div>
+                <div class="input-row">
+                    <label>N-term:</label>
+                    <select id="nTermMod">
+                        <option value="None">None</option>
+                        <option value="Acetyl (+42.01)">Acetyl (+42.01)</option>
+                        <option value="Formyl (+27.99)">Formyl (+27.99)</option>
+                        <option value="Carbamyl (+43.01)">Carbamyl (+43.01)</option>
+                        <option value="Pyroglutamic (-17.03)">Pyroglutamic (-17.03)</option>
+                        <option value="Pyro-Glu from E (-18.01)">Pyro-Glu from E (-18.01)</option>
+                    </select>
+                    <label>C-term:</label>
+                    <select id="cTermMod">
+                        <option value="None">None</option>
+                        <option value="Amide (-0.98)">Amide (-0.98)</option>
+                        <option value="Methyl ester (+14.02)">Methyl ester (+14.02)</option>
+                    </select>
+                </div>
+                <div class="input-row">
+                    <label>Mod. latérale:</label>
+                    <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                        <div class="mods-row">
+                            <select id="sidemod1"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="sidepos1" placeholder="A:5">
+                            <select id="sidemod2"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="sidepos2" placeholder="">
+                            <select id="sidemod3"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="sidepos3" placeholder="">
+                        </div>
+                    </div>
+                </div>
+                <div class="input-row">
+                    <button class="btn primary" onclick="calculateMSMS()">🔬 Calculer les fragments</button>
+                    <label>Mass list:</label>
+                    <textarea class="mass-list-area" id="massList" rows="2" placeholder="1234.56&#10;2345.67"></textarea>
+                    <button class="btn" onclick="document.getElementById('massList').value=''; matchedMSMS={}; updateMSMSDisplay();" title="Vider" style="padding:6px 8px;">✕</button>
+                    <div class="input-group">
+                        <label>Tolérance:</label>
+                        <input type="number" id="massTolerance" value="0.5" step="0.1" min="0.01">
+                        <span style="font-size:0.92em;">Da</span>
+                        <button class="btn" onclick="findMatches()">🔍 Match</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="precursor-info" id="precursorInfo">
+                <div>Masse totale: <span class="val" id="totalMass">--</span></div>
+                <div>[M+H]⁺: <span class="val" id="mh1">--</span></div>
+                <div>[M+2H]²⁺: <span class="val" id="mh2">--</span></div>
+                <div>[M+3H]³⁺: <span class="val" id="mh3">--</span></div>
+                <div id="chainsInfoMSMS" style="color:#888;"></div>
+                <div id="modsInfoMSMS" style="color:#888; font-size:1em;"></div>
+                <div id="modsWarnings" class="warn"></div>
+            </div>
+
+            <div class="filter-bar" id="filterBarMSMS">
+                <label>Chaînes:</label>
+                <label><input type="checkbox" checked class="chain-filter" data-chain="A" onchange="updateMSMSDisplay()"> A</label>
+                <label><input type="checkbox" checked class="chain-filter" data-chain="B" onchange="updateMSMSDisplay()"> B</label>
+                <label><input type="checkbox" checked class="chain-filter" data-chain="C" onchange="updateMSMSDisplay()"> C</label>
+                <label><input type="checkbox" checked class="chain-filter" data-chain="D" onchange="updateMSMSDisplay()"> D</label>
+                <div class="filter-sep"></div>
+                <label>Ions:</label>
+                <label><input type="checkbox" checked id="showA" onchange="updateMSMSDisplay()"> a</label>
+                <label><input type="checkbox" checked id="showB" onchange="updateMSMSDisplay()"> b</label>
+                <label><input type="checkbox" checked id="showY" onchange="updateMSMSDisplay()"> y</label>
+                <div class="filter-sep"></div>
+                <label>Modifications:</label>
+                <label><input type="checkbox" checked id="showBase" onchange="updateMSMSDisplay()"> Base</label>
+                <label><input type="checkbox" checked id="showH2OLoss" onchange="updateMSMSDisplay()"> -H₂O</label>
+                <label><input type="checkbox" id="showH2OGain" onchange="updateMSMSDisplay()"> +H₂O</label>
+                <label><input type="checkbox" checked id="showNH3Loss" onchange="updateMSMSDisplay()"> -NH₃</label>
+                <div class="filter-sep"></div>
+                <label><input type="checkbox" id="showLinkedOnly" onchange="updateMSMSDisplay()"> Fragments liés</label>
+                <label><input type="checkbox" id="showMatchesOnly" onchange="updateMSMSDisplay()"> Matchs seuls</label>
+                <button class="btn" onclick="exportMSMSCSV()" style="margin-left:auto;">📁 Export CSV</button>
+            </div>
+
+            <div class="results-container" id="msmsResults">
+                <table class="results" id="msmsTable">
+                    <thead><tr>
+                        <th onclick="sortMSMS('chain')">Chaîne</th>
+                        <th onclick="sortMSMS('ion')">Ion</th>
+                        <th onclick="sortMSMS('position')">Pos</th>
+                        <th>Séquence</th>
+                        <th onclick="sortMSMS('modification')">Modif.</th>
+                        <th onclick="sortMSMS('mass_mz')">m/z théo.</th>
+                        <th onclick="sortMSMS('exp_mass')">m/z exp.</th>
+                        <th onclick="sortMSMS('delta')">Δ (Da)</th>
+                        <th>Liés</th>
+                        <th>S-S</th>
+                    </tr></thead>
+                    <tbody id="msmsBody"></tbody>
+                </table>
+            </div>
+
+            <div class="stats-bar">
+                <div>Fragments affichés: <span id="msmsCount">0</span></div>
+                <div id="matchStats"></div>
+            </div>
+        </div>
+
+        <!-- ========== DIGEST TAB ========== -->
+        <div class="tab-content" id="tab-digest">
+            <div class="input-section" style="border-top: 1px solid #0f3460;">
+                <div class="input-row">
+                    <label>Enzyme:</label>
+                    <select id="enzymeSelect" onchange="updateEnzymeDesc()">
+                        <option value="Trypsin">Trypsin</option>
+                        <option value="Trypsin (no P rule)">Trypsin (no P rule)</option>
+                        <option value="Chymotrypsin">Chymotrypsin</option>
+                        <option value="Chymotrypsin (high spec)">Chymotrypsin (high spec)</option>
+                        <option value="Lys-C">Lys-C</option>
+                        <option value="Arg-C">Arg-C</option>
+                        <option value="Asp-N">Asp-N</option>
+                        <option value="Glu-C (bicarbonate)">Glu-C (bicarbonate)</option>
+                        <option value="Glu-C (phosphate)">Glu-C (phosphate)</option>
+                        <option value="Pepsin (pH 1.3)">Pepsin (pH 1.3)</option>
+                        <option value="Thermolysin">Thermolysin</option>
+                        <option value="CNBr">CNBr</option>
+                    </select>
+                    <span class="enzyme-desc" id="enzymeDesc">Clive après K, R (sauf si suivi de P)</span>
+                </div>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Clivages manqués:</label>
+                        <input type="number" id="missedCleavages" value="2" min="0" max="5">
+                    </div>
+                    <div class="input-group">
+                        <label>Masse min (Da):</label>
+                        <input type="number" id="digestMassMin" value="500" step="100">
+                    </div>
+                    <div class="input-group">
+                        <label>Masse max (Da):</label>
+                        <input type="number" id="digestMassMax" value="5000" step="100">
+                    </div>
+                </div>
+                <div class="input-row">
+                    <label>Ponts S-S:</label>
+                    <input type="text" id="digestDisulfide" placeholder="A:6-A:11, A:7-B:7 ou 6-11">
+                    <label style="min-width:auto;"><input type="checkbox" id="digestExploreAllSS" style="accent-color:#e94560;"> Explorer toutes combinaisons S-S</label>
+                </div>
+                <div class="input-row">
+                    <label>Modif. glob.:</label>
+                    <label><input type="checkbox" id="digestCysAlkyl" checked style="accent-color:#e94560;"> C Carbamidomethyl (+57.02)</label>
+                    <label><input type="checkbox" id="digestMetOx" style="accent-color:#e94560;"> M Oxidation (+15.99)</label>
+                    <label><input type="checkbox" id="digestNDeamid" style="accent-color:#e94560;"> N Deamidation (+0.98)</label>
+                    <label><input type="checkbox" id="digestQDeamid" style="accent-color:#e94560;"> Q Deamidation (+0.98)</label>
+                </div>
+                <div class="input-row">
+                    <label>Mod. latérale:</label>
+                    <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                        <div class="mods-row">
+                            <select id="digestSidemod1"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="digestSidepos1" placeholder="A:5">
+                            <select id="digestSidemod2"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="digestSidepos2" placeholder="">
+                            <select id="digestSidemod3"><option value="None">None</option></select>
+                            <span>@</span><input type="text" id="digestSidepos3" placeholder="">
+                        </div>
+                    </div>
+                </div>
+                <div class="input-row">
+                    <label>N-term:</label>
+                    <select id="digestNTerm">
+                        <option value="None">None</option>
+                        <option value="Acetyl (+42.01)">Acetyl (+42.01)</option>
+                        <option value="Formyl (+27.99)">Formyl (+27.99)</option>
+                        <option value="Carbamyl (+43.01)">Carbamyl (+43.01)</option>
+                        <option value="Pyroglutamic (-17.03)">Pyroglutamic (-17.03)</option>
+                        <option value="Pyro-Glu from E (-18.01)">Pyro-Glu from E (-18.01)</option>
+                    </select>
+                    <label>C-term:</label>
+                    <select id="digestCTerm">
+                        <option value="None">None</option>
+                        <option value="Amide (-0.98)">Amide (-0.98)</option>
+                        <option value="Methyl ester (+14.02)">Methyl ester (+14.02)</option>
+                    </select>
+                    <button class="btn primary" onclick="performDigest()">✂️ Digérer</button>
+                </div>
+                <div class="input-row">
+                    <label>Mass list:</label>
+                    <textarea class="mass-list-area" id="digestMassList" rows="2" placeholder="1234.56&#10;2345.67"></textarea>
+                    <button class="btn" onclick="document.getElementById('digestMassList').value=''; matchedDigest={}; updateDigestDisplay();" title="Vider" style="padding:6px 8px;">✕</button>
+                    <div class="input-group">
+                        <label>Tolérance:</label>
+                        <input type="number" id="digestTolerance" value="0.5" step="0.1" min="0.01">
+                        <span style="font-size:0.92em;">Da</span>
+                        <button class="btn" onclick="findDigestMatches()">🔍 Match</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="precursor-info" id="digestPrecursorInfo">
+                <div>Masse protéine: <span class="val" id="digestTotalMass">--</span></div>
+                <div>Peptides trouvés: <span class="val" id="digestPeptideCount">--</span></div>
+                <div id="digestChainsInfo" style="color:#888;"></div>
+                <div id="digestModsInfo" style="color:#888; font-size:1em;"></div>
+            </div>
+
+            <div class="filter-bar" id="digestFilterBar">
+                <label>Chaînes:</label>
+                <label><input type="checkbox" checked class="digest-chain-filter" data-chain="A" onchange="updateDigestDisplay()"> A</label>
+                <label><input type="checkbox" checked class="digest-chain-filter" data-chain="B" onchange="updateDigestDisplay()"> B</label>
+                <label><input type="checkbox" checked class="digest-chain-filter" data-chain="C" onchange="updateDigestDisplay()"> C</label>
+                <label><input type="checkbox" checked class="digest-chain-filter" data-chain="D" onchange="updateDigestDisplay()"> D</label>
+                <label><input type="checkbox" checked class="digest-chain-filter" data-chain="+" onchange="updateDigestDisplay()"> Liés</label>
+                <div class="filter-sep"></div>
+                <label>Clivages manqués:</label>
+                <label><input type="checkbox" checked class="missed-filter" data-missed="0" onchange="updateDigestDisplay()"> 0</label>
+                <label><input type="checkbox" checked class="missed-filter" data-missed="1" onchange="updateDigestDisplay()"> 1</label>
+                <label><input type="checkbox" checked class="missed-filter" data-missed="2" onchange="updateDigestDisplay()"> 2</label>
+                <div class="filter-sep"></div>
+                <label><input type="checkbox" id="digestShowSSOnly" onchange="updateDigestDisplay()"> Avec ponts S-S</label>
+                <label><input type="checkbox" id="digestMatchesOnly" onchange="updateDigestDisplay()"> Matchs seuls</label>
+                <button class="btn" onclick="exportDigestCSV()" style="margin-left:auto;">📁 Export CSV</button>
+            </div>
+
+            <div class="results-container" id="digestResults">
+                <table class="results" id="digestTable">
+                    <thead><tr>
+                        <th onclick="sortDigest('chain')">Chaîne</th>
+                        <th onclick="sortDigest('sequence')">Séquence</th>
+                        <th onclick="sortDigest('start')">Début</th>
+                        <th onclick="sortDigest('end')">Fin</th>
+                        <th onclick="sortDigest('length')">Long.</th>
+                        <th onclick="sortDigest('missed')">MC</th>
+                        <th onclick="sortDigest('mass')">Masse [M]</th>
+                        <th onclick="sortDigest('mh')">m/z [M+H]⁺</th>
+                        <th>m/z exp.</th>
+                        <th>Δ (Da)</th>
+                        <th>S-S</th>
+                        <th>Modifications</th>
+                    </tr></thead>
+                    <tbody id="digestBody"></tbody>
+                </table>
+            </div>
+
+            <div class="stats-bar">
+                <div>Peptides affichés: <span id="digestDisplayCount">0</span></div>
+                <div id="digestMatchStats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================================
+    // CONSTANTS
+    // ============================================================
+    const AMINO_ACID_MASSES = {
+        A: 71.03711, R: 156.10111, N: 114.04293, D: 115.02694, C: 103.00919,
+        E: 129.04259, Q: 128.05858, G: 57.02146, H: 137.05891, I: 113.08406,
+        L: 113.08406, K: 128.09496, M: 131.04049, F: 147.06841, P: 97.05276,
+        S: 87.03203, T: 101.04768, W: 186.07931, Y: 163.06333, V: 99.06841
+    };
+    const MASS_H = 1.007825, MASS_O = 15.994915, MASS_N = 14.003074;
+    const MASS_H2O = 18.010565, MASS_NH3 = 17.026549, MASS_CO = 27.994915, MASS_PROTON = 1.007276;
+
+    const N_TERM_MODS = {
+        'None': 0, 'Acetyl (+42.01)': 42.010565, 'Formyl (+27.99)': 27.994915,
+        'Carbamyl (+43.01)': 43.005814, 'Pyroglutamic (-17.03)': -17.026549,
+        'Pyro-Glu from E (-18.01)': -18.010565
+    };
+    const C_TERM_MODS = {
+        'None': 0, 'Amide (-0.98)': -0.984016, 'Methyl ester (+14.02)': 14.01565
+    };
+    const SIDECHAIN_MODS = {
+        'None': [null, 0],
+        'K Biotin (+226.08)': ['K', 226.077598],
+        'K Biotin-LC (+339.16)': ['K', 339.161662],
+        'K Biotin-PEG4 (+371.19)': ['K', 371.187786],
+        'M Oxidation (+15.99)': ['M', 15.994915],
+        'W Oxidation (+15.99)': ['W', 15.994915],
+        'C Oxidation (+15.99)': ['C', 15.994915],
+        'S Phospho (+79.97)': ['S', 79.966331],
+        'T Phospho (+79.97)': ['T', 79.966331],
+        'Y Phospho (+79.97)': ['Y', 79.966331],
+        'K Methyl (+14.02)': ['K', 14.01565],
+        'K Dimethyl (+28.03)': ['K', 28.0313],
+        'K Trimethyl (+42.05)': ['K', 42.04695],
+        'R Methyl (+14.02)': ['R', 14.01565],
+        'K Acetyl (+42.01)': ['K', 42.010565],
+        'C Carbamidomethyl (+57.02)': ['C', 57.021464],
+        'C Carboxymethyl (+58.01)': ['C', 58.005479],
+        'N Deamidation (+0.98)': ['N', 0.984016],
+        'Q Deamidation (+0.98)': ['Q', 0.984016],
+        'K Ubiquitin GG (+114.04)': ['K', 114.042927]
+    };
+    const DIGEST_ENZYMES = {
+        'Trypsin': { desc: 'Clive après K, R (sauf si suivi de P)', after: 'KR', except: 'P' },
+        'Trypsin (no P rule)': { desc: 'Clive après K, R (sans exception)', after: 'KR', except: '' },
+        'Chymotrypsin': { desc: 'Clive après F, W, Y, L', after: 'FWYL', except: 'P' },
+        'Chymotrypsin (high spec)': { desc: 'Clive après F, W, Y', after: 'FWY', except: 'P' },
+        'Lys-C': { desc: 'Clive après K', after: 'K', except: '' },
+        'Arg-C': { desc: 'Clive après R', after: 'R', except: 'P' },
+        'Asp-N': { desc: 'Clive avant D', before: 'D', except: '' },
+        'Glu-C (bicarbonate)': { desc: 'Clive après E', after: 'E', except: 'P' },
+        'Glu-C (phosphate)': { desc: 'Clive après E et D', after: 'ED', except: 'P' },
+        'Pepsin (pH 1.3)': { desc: 'Clive après F, L, W, Y, A, E, Q', after: 'FLWYAEQ', except: '' },
+        'Thermolysin': { desc: 'Clive avant A, F, I, L, M, V', before: 'AFILMV', except: '' },
+        'CNBr': { desc: 'Clive après M (chimique)', after: 'M', except: '' }
+    };
+
+    // ============================================================
+    // STATE
+    // ============================================================
+    let msmsFragments = [];
+    let digestPeptides = [];
+    let matchedMSMS = {};
+    let matchedDigest = {};
+    let msmsSortCol = 'mass_mz', msmsSortAsc = true;
+    let digestSortCol = 'mh', digestSortAsc = true;
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    (function initSelects() {
+        const opts = Object.keys(SIDECHAIN_MODS).map(k => `<option value="${k}">${k}</option>`).join('');
+        ['sidemod1','sidemod2','sidemod3','digestSidemod1','digestSidemod2','digestSidemod3'].forEach(id => {
+            document.getElementById(id).innerHTML = opts;
+        });
+    })();
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
+        event.target.classList.add('active');
+    }
+
+    function updateEnzymeDesc() {
+        const enzyme = document.getElementById('enzymeSelect').value;
+        document.getElementById('enzymeDesc').textContent = DIGEST_ENZYMES[enzyme]?.desc || '';
+    }
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    function getChains() {
+        const chains = {};
+        ['A','B','C','D'].forEach(id => {
+            const seq = document.getElementById('chain' + id).value.trim().toUpperCase().replace(/\s/g, '');
+            if (seq) chains[id] = seq;
+        });
+        return chains;
+    }
+
+    function parseDisulfide(text) {
+        if (!text.trim()) return [];
+        const bridges = [];
+        for (const part of text.split(',')) {
+            const p = part.trim();
+            // Full format: A:6-A:11
+            let m = p.match(/([A-D]):(\d+)\s*-\s*([A-D]):(\d+)/);
+            if (m) { bridges.push({ c1: m[1], p1: parseInt(m[2]), c2: m[3], p2: parseInt(m[4]) }); continue; }
+            // Legacy format: 6-11 (defaults to chain A)
+            m = p.match(/^(\d+)\s*-\s*(\d+)$/);
+            if (m) { bridges.push({ c1: 'A', p1: parseInt(m[1]), c2: 'A', p2: parseInt(m[2]) }); }
+        }
+        return bridges;
+    }
+
+    function validateChains(chains) {
+        for (const [id, seq] of Object.entries(chains)) {
+            for (let i = 0; i < seq.length; i++) {
+                if (!(seq[i] in AMINO_ACID_MASSES))
+                    throw new Error(`Chaîne ${id}: Acide aminé inconnu '${seq[i]}' à la position ${i+1}`);
+            }
+        }
+    }
+
+    function validateSSBridges(bridges, chains) {
+        const warnings = [];
+        for (const b of bridges) {
+            const seq1 = chains[b.c1], seq2 = chains[b.c2];
+            if (!seq1) { warnings.push(`Pont S-S: chaîne ${b.c1} n'existe pas`); continue; }
+            if (!seq2) { warnings.push(`Pont S-S: chaîne ${b.c2} n'existe pas`); continue; }
+            if (b.p1 < 1 || b.p1 > seq1.length) { warnings.push(`Pont S-S: position ${b.c1}:${b.p1} hors limites`); continue; }
+            if (b.p2 < 1 || b.p2 > seq2.length) { warnings.push(`Pont S-S: position ${b.c2}:${b.p2} hors limites`); continue; }
+            if (seq1[b.p1 - 1] !== 'C') warnings.push(`⚠ ${b.c1}:${b.p1} n'est pas une Cys (${seq1[b.p1-1]})`);
+            if (seq2[b.p2 - 1] !== 'C') warnings.push(`⚠ ${b.c2}:${b.p2} n'est pas une Cys (${seq2[b.p2-1]})`);
+        }
+        return warnings;
+    }
+
+    function getSeqMass(chains, chainId, start, end, sidechainMods) {
+        const seq = chains[chainId];
+        let mass = 0;
+        for (let i = start; i < end; i++) {
+            mass += AMINO_ACID_MASSES[seq[i]];
+            const key = `${chainId}:${i+1}`;
+            if (sidechainMods[key]) mass += sidechainMods[key].delta;
+        }
+        return mass;
+    }
+
+    function hasIntrachainSS(bridges, chainId, start, end) {
+        return bridges.some(b =>
+            b.c1 === chainId && b.c2 === chainId &&
+            start <= b.p1 - 1 && b.p1 - 1 < end &&
+            start <= b.p2 - 1 && b.p2 - 1 < end
+        );
+    }
+
+    function breaksIntrachainSS(bridges, chainId, start, end) {
+        return bridges.some(b => {
+            if (b.c1 !== chainId || b.c2 !== chainId || b.c1 !== b.c2) return false;
+            const p1in = start <= b.p1 - 1 && b.p1 - 1 < end;
+            const p2in = start <= b.p2 - 1 && b.p2 - 1 < end;
+            return p1in !== p2in;
+        });
+    }
+
+    function intrachainSSCorrection(bridges, chainId, start, end) {
+        let corr = 0;
+        bridges.forEach(b => {
+            if (b.c1 === chainId && b.c2 === chainId &&
+                start <= b.p1 - 1 && b.p1 - 1 < end &&
+                start <= b.p2 - 1 && b.p2 - 1 < end) {
+                corr -= 2 * MASS_H;
+            }
+        });
+        return corr;
+    }
+
+    function getInterchainLinks(bridges, chains, chainId, start, end) {
+        const links = [];
+        bridges.forEach(b => {
+            if (b.c1 === b.c2) return;
+            if (b.c1 === chainId && start <= b.p1 - 1 && b.p1 - 1 < end)
+                links.push({ chain: b.c2, pos: b.p2 });
+            else if (b.c2 === chainId && start <= b.p2 - 1 && b.p2 - 1 < end)
+                links.push({ chain: b.c1, pos: b.p1 });
+        });
+        return links;
+    }
+
+    function getSSCysteines(bridges, chainId) {
+        const cys = new Set();
+        for (const b of bridges) {
+            if (b.c1 === chainId) cys.add(b.p1);
+            if (b.c2 === chainId) cys.add(b.p2);
+        }
+        return cys;
+    }
+
+    // ============================================================
+    // MS/MS CALCULATION
+    // ============================================================
+    function calculateMSMS() {
+        try {
+            const chains = getChains();
+            if (Object.keys(chains).length === 0) { alert('Entrez au moins une séquence.'); return; }
+            validateChains(chains);
+
+            const bridges = parseDisulfide(document.getElementById('disulfideBonds').value);
+            const ssWarnings = validateSSBridges(bridges, chains);
+            const includeBroken = document.getElementById('includeBrokenSS').checked;
+            const nTermMass = N_TERM_MODS[document.getElementById('nTermMod').value] || 0;
+            const cTermMass = C_TERM_MODS[document.getElementById('cTermMod').value] || 0;
+
+            const sidechainMods = {};
+            const sidechainWarnings = [];
+            for (let i = 1; i <= 3; i++) {
+                const modName = document.getElementById(`sidemod${i}`).value;
+                const posStr = document.getElementById(`sidepos${i}`).value.trim();
+                if (modName === 'None' || !posStr) continue;
+                const m = posStr.match(/([A-D]):(\d+)/);
+                if (!m) continue;
+                const [targetAA, delta] = SIDECHAIN_MODS[modName];
+                const actualAA = chains[m[1]] ? chains[m[1]][parseInt(m[2]) - 1] : null;
+                if (targetAA && actualAA && actualAA !== targetAA)
+                    sidechainWarnings.push(`⚠ ${modName}: attend ${targetAA}, trouvé ${actualAA} à ${posStr}`);
+                sidechainMods[`${m[1]}:${m[2]}`] = { name: modName, delta, targetAA };
+            }
+
+            msmsFragments = [];
+            matchedMSMS = {};
+            const variants = [['', 0], ['-H₂O', -MASS_H2O], ['+H₂O', MASS_H2O], ['-NH₃', -MASS_NH3]];
+
+            for (const [chainId, seq] of Object.entries(chains)) {
+                const n = seq.length;
+                // b ions
+                for (let i = 1; i < n; i++) {
+                    if (!includeBroken && breaksIntrachainSS(bridges, chainId, 0, i)) continue;
+                    let mass = getSeqMass(chains, chainId, 0, i, sidechainMods);
+                    mass += intrachainSSCorrection(bridges, chainId, 0, i) + nTermMass;
+                    const hasSS = hasIntrachainSS(bridges, chainId, 0, i);
+                    const links = getInterchainLinks(bridges, chains, chainId, 0, i);
+                    links.forEach(l => {
+                        const lSeq = chains[l.chain];
+                        mass += getSeqMass(chains, l.chain, 0, lSeq.length, sidechainMods) + MASS_H2O - 2 * MASS_H;
+                        mass += intrachainSSCorrection(bridges, l.chain, 0, lSeq.length);
+                    });
+                    for (const [mod, modMass] of variants) {
+                        msmsFragments.push({
+                            chain: chainId, ion: 'b', pos: i, seq: seq.slice(0, i),
+                            mod, mass_mz: mass + modMass + MASS_PROTON,
+                            hasSS: hasSS || links.length > 0,
+                            linked: links.map(l => `${l.chain}(1-${chains[l.chain].length})`).join(', ')
+                        });
+                    }
+                }
+                // a ions
+                for (let i = 1; i < n; i++) {
+                    if (!includeBroken && breaksIntrachainSS(bridges, chainId, 0, i)) continue;
+                    let mass = getSeqMass(chains, chainId, 0, i, sidechainMods);
+                    mass += intrachainSSCorrection(bridges, chainId, 0, i) + nTermMass - MASS_CO;
+                    const hasSS = hasIntrachainSS(bridges, chainId, 0, i);
+                    const links = getInterchainLinks(bridges, chains, chainId, 0, i);
+                    links.forEach(l => {
+                        const lSeq = chains[l.chain];
+                        mass += getSeqMass(chains, l.chain, 0, lSeq.length, sidechainMods) + MASS_H2O - 2 * MASS_H;
+                        mass += intrachainSSCorrection(bridges, l.chain, 0, lSeq.length);
+                    });
+                    for (const [mod, modMass] of variants) {
+                        msmsFragments.push({
+                            chain: chainId, ion: 'a', pos: i, seq: seq.slice(0, i),
+                            mod, mass_mz: mass + modMass + MASS_PROTON,
+                            hasSS: hasSS || links.length > 0,
+                            linked: links.map(l => `${l.chain}(1-${chains[l.chain].length})`).join(', ')
+                        });
+                    }
+                }
+                // y ions
+                for (let i = 1; i < n; i++) {
+                    const start = n - i;
+                    if (!includeBroken && breaksIntrachainSS(bridges, chainId, start, n)) continue;
+                    let mass = getSeqMass(chains, chainId, start, n, sidechainMods);
+                    mass += intrachainSSCorrection(bridges, chainId, start, n) + cTermMass + MASS_H2O;
+                    const hasSS = hasIntrachainSS(bridges, chainId, start, n);
+                    const links = getInterchainLinks(bridges, chains, chainId, start, n);
+                    links.forEach(l => {
+                        const lSeq = chains[l.chain];
+                        mass += getSeqMass(chains, l.chain, 0, lSeq.length, sidechainMods) + MASS_H2O - 2 * MASS_H;
+                        mass += intrachainSSCorrection(bridges, l.chain, 0, lSeq.length);
+                    });
+                    for (const [mod, modMass] of variants) {
+                        msmsFragments.push({
+                            chain: chainId, ion: 'y', pos: i, seq: seq.slice(start),
+                            mod, mass_mz: mass + modMass + MASS_PROTON,
+                            hasSS: hasSS || links.length > 0,
+                            linked: links.map(l => `${l.chain}(1-${chains[l.chain].length})`).join(', ')
+                        });
+                    }
+                }
+            }
+
+            // Update precursor
+            let totalMass = 0;
+            for (const [cid, seq] of Object.entries(chains)) {
+                totalMass += getSeqMass(chains, cid, 0, seq.length, sidechainMods);
+                totalMass += intrachainSSCorrection(bridges, cid, 0, seq.length);
+                totalMass += MASS_H2O;
+            }
+            totalMass -= bridges.filter(b => b.c1 !== b.c2).length * 2 * MASS_H;
+            totalMass += nTermMass + cTermMass;
+
+            document.getElementById('totalMass').textContent = totalMass.toFixed(4);
+            document.getElementById('mh1').textContent = ((totalMass + MASS_PROTON) / 1).toFixed(4);
+            document.getElementById('mh2').textContent = ((totalMass + 2 * MASS_PROTON) / 2).toFixed(4);
+            document.getElementById('mh3').textContent = ((totalMass + 3 * MASS_PROTON) / 3).toFixed(4);
+            document.getElementById('chainsInfoMSMS').textContent =
+                Object.entries(chains).map(([id, s]) => `${id}: ${s.length} AA`).join(' | ') +
+                (bridges.length > 0 ? ` | ${bridges.length} pont(s) S-S` : '');
+
+            // Mods info
+            const modsActive = [];
+            if (nTermMass !== 0) modsActive.push(document.getElementById('nTermMod').value);
+            if (cTermMass !== 0) modsActive.push(document.getElementById('cTermMod').value);
+            Object.values(sidechainMods).forEach(m => modsActive.push(m.name));
+            document.getElementById('modsInfoMSMS').textContent = modsActive.length ? 'Mods: ' + modsActive.join(', ') : '';
+
+            const allWarnings = [...ssWarnings, ...sidechainWarnings];
+            document.getElementById('modsWarnings').textContent = allWarnings.join(' | ');
+
+            updateMSMSDisplay();
+        } catch (e) {
+            alert('Erreur: ' + e.message);
+        }
+    }
+
+    // ============================================================
+    // MS/MS MATCHING & DISPLAY
+    // ============================================================
+    function findMatches() {
+        const text = document.getElementById('massList').value.trim();
+        if (!text || msmsFragments.length === 0) return;
+        const tol = parseFloat(document.getElementById('massTolerance').value) || 0.5;
+        const expMasses = text.split('\n').map(l => parseFloat(l.trim())).filter(v => !isNaN(v));
+        matchedMSMS = {};
+        for (let i = 0; i < msmsFragments.length; i++) {
+            for (const em of expMasses) {
+                const delta = Math.abs(msmsFragments[i].mass_mz - em);
+                if (delta <= tol) {
+                    if (!matchedMSMS[i] || delta < Math.abs(matchedMSMS[i].delta))
+                        matchedMSMS[i] = { expMass: em, delta: msmsFragments[i].mass_mz - em };
+                }
+            }
+        }
+        document.getElementById('matchStats').innerHTML =
+            `Matchs: <span>${Object.keys(matchedMSMS).length}</span> fragments / ${expMasses.length} masses exp.`;
+        updateMSMSDisplay();
+    }
+
+    function getFilteredMSMS() {
+        const chainFilters = {};
+        document.querySelectorAll('.chain-filter').forEach(cb => { chainFilters[cb.dataset.chain] = cb.checked; });
+        const showIons = { a: document.getElementById('showA').checked, b: document.getElementById('showB').checked, y: document.getElementById('showY').checked };
+        const showMods = {
+            '': document.getElementById('showBase').checked,
+            '-H₂O': document.getElementById('showH2OLoss').checked,
+            '+H₂O': document.getElementById('showH2OGain').checked,
+            '-NH₃': document.getElementById('showNH3Loss').checked
+        };
+        const matchesOnly = document.getElementById('showMatchesOnly').checked;
+        const linkedOnly = document.getElementById('showLinkedOnly').checked;
+
+        return msmsFragments.map((f, i) => ({ ...f, idx: i })).filter((f, i) => {
+            if (!chainFilters[f.chain]) return false;
+            if (!showIons[f.ion]) return false;
+            if (!showMods[f.mod]) return false;
+            if (matchesOnly && !matchedMSMS[i]) return false;
+            if (linkedOnly && !f.linked) return false;
+            return true;
+        });
+    }
+
+    function sortMSMS(col) {
+        if (msmsSortCol === col) msmsSortAsc = !msmsSortAsc;
+        else { msmsSortCol = col; msmsSortAsc = true; }
+        updateMSMSDisplay();
+    }
+
+    function updateMSMSDisplay() {
+        let filtered = getFilteredMSMS();
+        filtered.sort((a, b) => {
+            let va = a[msmsSortCol], vb = b[msmsSortCol];
+            if (msmsSortCol === 'exp_mass') { va = matchedMSMS[a.idx]?.expMass || 99999; vb = matchedMSMS[b.idx]?.expMass || 99999; }
+            if (msmsSortCol === 'delta') { va = matchedMSMS[a.idx]?.delta || 99999; vb = matchedMSMS[b.idx]?.delta || 99999; }
+            if (typeof va === 'string') return msmsSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+            return msmsSortAsc ? va - vb : vb - va;
+        });
+        const tbody = document.getElementById('msmsBody');
+        tbody.innerHTML = '';
+        for (const f of filtered) {
+            const match = matchedMSMS[f.idx];
+            const tr = document.createElement('tr');
+            if (f.hasSS) tr.classList.add('has-ss');
+            if (match) tr.classList.add('matched');
+            tr.innerHTML = `
+                <td>${f.chain}</td>
+                <td class="ion-${f.ion}">${f.ion}${f.pos}</td>
+                <td>${f.pos}</td>
+                <td class="seq">${f.seq}</td>
+                <td>${f.mod}</td>
+                <td>${f.mass_mz.toFixed(4)}</td>
+                <td>${match ? match.expMass.toFixed(4) : ''}</td>
+                <td>${match ? match.delta.toFixed(4) : ''}</td>
+                <td style="font-size:0.92em;color:#888;">${f.linked || ''}</td>
+                <td>${f.hasSS ? '🔗' : ''}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+        document.getElementById('msmsCount').textContent = filtered.length;
+    }
+
+    // ============================================================
+    // DIGEST CALCULATION
+    // ============================================================
+    function findCleavageSites(seq, enzyme) {
+        const sites = [];
+        if (enzyme.after) {
+            for (let i = 0; i < seq.length - 1; i++) {
+                if (enzyme.after.includes(seq[i]) && (!enzyme.except || !enzyme.except.includes(seq[i + 1])))
+                    sites.push(i + 1);
+            }
+        } else if (enzyme.before) {
+            for (let i = 1; i < seq.length; i++) {
+                if (enzyme.before.includes(seq[i]) && (!enzyme.except || !enzyme.except.includes(seq[i - 1])))
+                    sites.push(i);
+            }
+        }
+        return sites;
+    }
+
+    function generateAllSSCombinations(chains) {
+        const cysteines = [];
+        for (const [chainId, seq] of Object.entries(chains)) {
+            for (let i = 0; i < seq.length; i++) {
+                if (seq[i] === 'C') cysteines.push({ chain: chainId, pos: i + 1 });
+            }
+        }
+        if (cysteines.length < 2) return [[]];
+
+        const allCombinations = [];
+        function generatePairings(remaining, current) {
+            if (remaining.length < 2) { allCombinations.push(current.slice()); return; }
+            const first = remaining[0];
+            for (let i = 1; i < remaining.length; i++) {
+                const second = remaining[i];
+                current.push({ c1: first.chain, p1: first.pos, c2: second.chain, p2: second.pos });
+                generatePairings([...remaining.slice(1, i), ...remaining.slice(i + 1)], current);
+                current.pop();
+            }
+        }
+        generatePairings(cysteines, []);
+
+        // Add partial combinations for small sets
+        if (cysteines.length <= 6) {
+            allCombinations.push([]);
+            for (let i = 0; i < cysteines.length; i++) {
+                for (let j = i + 1; j < cysteines.length; j++) {
+                    allCombinations.push([{ c1: cysteines[i].chain, p1: cysteines[i].pos, c2: cysteines[j].chain, p2: cysteines[j].pos }]);
+                }
+            }
+        }
+
+        // Deduplicate
+        const seen = new Set();
+        return allCombinations.filter(combo => {
+            const key = combo.map(b => [Math.min(b.c1+b.p1, b.c2+b.p2), Math.max(b.c1+b.p1, b.c2+b.p2)].join('-')).sort().join('|');
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    function digestChain(chainId, seq, enzyme, maxMissed, sidechainMods, nTermMass, cTermMass) {
+        const sites = findCleavageSites(seq, enzyme);
+        const allPos = [0, ...sites, seq.length];
+        const peptides = [];
+        for (let missed = 0; missed <= maxMissed; missed++) {
+            for (let i = 0; i < allPos.length - 1 - missed; i++) {
+                const start = allPos[i], end = allPos[i + 1 + missed];
+                const pepSeq = seq.slice(start, end);
+                if (!pepSeq) continue;
+                let mass = 0;
+                const mods = [];
+                for (let j = start; j < end; j++) {
+                    mass += AMINO_ACID_MASSES[seq[j]];
+                    const key = `${chainId}:${j+1}`;
+                    if (sidechainMods[key]) { mass += sidechainMods[key].delta; mods.push(`${sidechainMods[key].name}@${j+1}`); }
+                }
+                mass += MASS_H2O;
+                if (start === 0) mass += nTermMass;
+                if (end === seq.length) mass += cTermMass;
+                peptides.push({
+                    chain: chainId, seq: pepSeq,
+                    start: start + 1, end, length: pepSeq.length,
+                    missed, mass, mh: mass + MASS_PROTON,
+                    mods: mods.join(', '), hasSS: false, ssInfo: '', linked: ''
+                });
+            }
+        }
+        return peptides;
+    }
+
+    function generateLinkedDigestPeptides(allPeptides, bridges, massMin, massMax) {
+        if (bridges.length === 0) return [];
+        const bridgePeptideMap = bridges.map(bridge => {
+            const pepsCys1 = allPeptides.filter(p => p.chain === bridge.c1 && p.start <= bridge.p1 && bridge.p1 <= p.end);
+            const pepsCys2 = allPeptides.filter(p => p.chain === bridge.c2 && p.start <= bridge.p2 && bridge.p2 <= p.end);
+            return { pepsCys1, pepsCys2, bridge };
+        });
+
+        const groups = [];
+        const seenGroups = new Set();
+        function getPepKey(p) { return `${p.chain}:${p.start}-${p.end}`; }
+
+        function buildGroups(currentPeps, currentBridges, idx) {
+            if (idx >= bridges.length) {
+                if (Object.keys(currentPeps).length >= 2) {
+                    const pepKeys = Object.keys(currentPeps).sort().join('+');
+                    const bKeys = currentBridges.map(b => `${b.c1}:${b.p1}-${b.c2}:${b.p2}`).sort().join('+');
+                    const gKey = pepKeys + '||' + bKeys;
+                    if (!seenGroups.has(gKey)) {
+                        seenGroups.add(gKey);
+                        groups.push({ peps: Object.values(currentPeps), bridges: currentBridges.slice() });
+                    }
+                }
+                return;
+            }
+            const { pepsCys1, pepsCys2, bridge } = bridgePeptideMap[idx];
+            buildGroups(currentPeps, currentBridges, idx + 1); // skip this bridge
+            for (const pep1 of pepsCys1) {
+                for (const pep2 of pepsCys2) {
+                    const k1 = getPepKey(pep1), k2 = getPepKey(pep2);
+                    if (k1 === k2) continue;
+                    const curKeys = new Set(Object.keys(currentPeps));
+                    if (curKeys.size > 0 && !curKeys.has(k1) && !curKeys.has(k2)) continue;
+                    const newPeps = { ...currentPeps };
+                    if (!newPeps[k1]) newPeps[k1] = pep1;
+                    if (!newPeps[k2]) newPeps[k2] = pep2;
+                    buildGroups(newPeps, [...currentBridges, bridge], idx + 1);
+                }
+            }
+        }
+        buildGroups({}, [], 0);
+
+        return groups.map(({ peps, bridges: grpBridges }) => {
+            peps.sort((a, b) => a.chain.localeCompare(b.chain) || a.start - b.start);
+            const combinedMass = peps.reduce((s, p) => s + p.mass, 0) - 2 * MASS_H * grpBridges.length;
+            const mh = combinedMass + MASS_PROTON;
+            if (mh < massMin || mh > massMax) return null;
+            const chainIds = [...new Set(peps.map(p => p.chain))];
+            const chainLabel = chainIds.length === 1 ? chainIds[0] : chainIds.sort().join('+');
+            const combinedSeq = peps.map(p => p.seq).join('+');
+            const ssLabel = grpBridges.map(b =>
+                b.c1 === b.c2 ? `C${b.p1}-C${b.p2}` : `${b.c1}:C${b.p1}-${b.c2}:C${b.p2}`
+            ).join(', ');
+            const allMods = peps.map(p => p.mods).filter(Boolean);
+            const totalMissed = peps.reduce((s, p) => s + p.missed, 0);
+            return {
+                chain: chainLabel, seq: combinedSeq,
+                start: peps[0].start, end: peps[peps.length - 1].end,
+                length: combinedSeq.replace(/\+/g, '').length,
+                missed: totalMissed, mass: combinedMass, mh,
+                mods: allMods.join('; '), hasSS: true, ssInfo: ssLabel,
+                linked: peps.map(p => `${p.chain}:${p.start}-${p.end}`).join(', ')
+            };
+        }).filter(Boolean);
+    }
+
+    function performDigest() {
+        try {
+            const chains = getChains();
+            if (Object.keys(chains).length === 0) { alert('Entrez au moins une séquence.'); return; }
+            validateChains(chains);
+
+            const enzymeName = document.getElementById('enzymeSelect').value;
+            const enzyme = DIGEST_ENZYMES[enzymeName];
+            const maxMissed = parseInt(document.getElementById('missedCleavages').value) || 2;
+            const massMin = parseFloat(document.getElementById('digestMassMin').value) || 0;
+            const massMax = parseFloat(document.getElementById('digestMassMax').value) || Infinity;
+            const nTermMass = N_TERM_MODS[document.getElementById('digestNTerm').value] || 0;
+            const cTermMass = C_TERM_MODS[document.getElementById('digestCTerm').value] || 0;
+            const cysAlkyl = document.getElementById('digestCysAlkyl').checked;
+            const metOx = document.getElementById('digestMetOx').checked;
+            const nDeamid = document.getElementById('digestNDeamid').checked;
+            const qDeamid = document.getElementById('digestQDeamid').checked;
+            const exploreAllSS = document.getElementById('digestExploreAllSS').checked;
+
+            // Get SS combinations
+            let allSSCombinations;
+            if (exploreAllSS) {
+                allSSCombinations = generateAllSSCombinations(chains);
+                if (allSSCombinations.length > 100) {
+                    if (!confirm(`${allSSCombinations.length} combinaisons de ponts S-S possibles.\nCela peut générer beaucoup de résultats.\n\nContinuer ?`))
+                        return;
+                }
+            } else {
+                allSSCombinations = [parseDisulfide(document.getElementById('digestDisulfide').value)];
+            }
+
+            digestPeptides = [];
+            matchedDigest = {};
+
+            for (const disulfideBridges of allSSCombinations) {
+                const ssWarnings = validateSSBridges(disulfideBridges, chains);
+
+                // Build sidechain mods per chain
+                for (const [chainId, seq] of Object.entries(chains)) {
+                    const sidechainMods = {};
+                    const ssCysteines = getSSCysteines(disulfideBridges, chainId);
+
+                    // C Carbamidomethyl (skip Cys in SS bridges)
+                    if (cysAlkyl) {
+                        for (let i = 0; i < seq.length; i++) {
+                            if (seq[i] === 'C' && !ssCysteines.has(i + 1))
+                                sidechainMods[`${chainId}:${i+1}`] = { name: 'C Carbamidomethyl', delta: 57.021464 };
+                        }
+                    }
+                    // M Oxidation
+                    if (metOx) {
+                        for (let i = 0; i < seq.length; i++) {
+                            if (seq[i] === 'M') sidechainMods[`${chainId}:${i+1}`] = { name: 'M Oxidation', delta: 15.994915 };
+                        }
+                    }
+                    // N Deamidation
+                    if (nDeamid) {
+                        for (let i = 0; i < seq.length; i++) {
+                            if (seq[i] === 'N') sidechainMods[`${chainId}:${i+1}`] = { name: 'N Deamidation', delta: 0.984016 };
+                        }
+                    }
+                    // Q Deamidation
+                    if (qDeamid) {
+                        for (let i = 0; i < seq.length; i++) {
+                            if (seq[i] === 'Q') sidechainMods[`${chainId}:${i+1}`] = { name: 'Q Deamidation', delta: 0.984016 };
+                        }
+                    }
+                    // Positional sidechain mods
+                    for (let si = 1; si <= 3; si++) {
+                        const modName = document.getElementById(`digestSidemod${si}`).value;
+                        const posStr = document.getElementById(`digestSidepos${si}`).value.trim().toUpperCase();
+                        if (modName === 'None' || !posStr) continue;
+                        const m = posStr.match(/([A-D]):(\d+)/);
+                        if (m && m[1] === chainId) {
+                            const [targetAA, delta] = SIDECHAIN_MODS[modName];
+                            sidechainMods[`${chainId}:${m[2]}`] = { name: modName, delta };
+                        }
+                    }
+
+                    const peptides = digestChain(chainId, seq, enzyme, maxMissed, sidechainMods, nTermMass, cTermMass);
+
+                    // Detect intra-peptide SS and apply mass correction
+                    for (const pep of peptides) {
+                        let ssCount = 0;
+                        const ssInfoParts = [];
+                        for (const bridge of disulfideBridges) {
+                            if (bridge.c1 === chainId && bridge.c2 === chainId) {
+                                if (pep.start <= bridge.p1 && bridge.p1 <= pep.end &&
+                                    pep.start <= bridge.p2 && bridge.p2 <= pep.end) {
+                                    ssCount++;
+                                    ssInfoParts.push(`C${bridge.p1}-C${bridge.p2}`);
+                                }
+                            }
+                        }
+                        if (ssCount > 0) {
+                            pep.hasSS = true;
+                            pep.ssInfo = ssInfoParts.join(', ');
+                            pep.mass -= 2 * MASS_H * ssCount;
+                            pep.mh = pep.mass + MASS_PROTON;
+                        }
+                    }
+
+                    // Filter by mass range
+                    for (const pep of peptides) {
+                        if (pep.mh >= massMin && pep.mh <= massMax) digestPeptides.push(pep);
+                    }
+                }
+
+                // Generate linked peptides (inter-peptide SS)
+                const allPeps = digestPeptides.filter(p => !p.linked); // only individual peptides
+                const linkedPeps = generateLinkedDigestPeptides(allPeps, disulfideBridges, massMin, massMax);
+                digestPeptides.push(...linkedPeps);
+            }
+
+            // Deduplicate (for explore all mode)
+            if (exploreAllSS && allSSCombinations.length > 1) {
+                const seen = new Set();
+                digestPeptides = digestPeptides.filter(p => {
+                    const key = `${p.chain}|${p.seq}|${p.start}|${p.end}|${p.mh.toFixed(4)}|${p.ssInfo}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+            }
+
+            // Protein mass
+            let totalMass = 0;
+            const firstBridges = allSSCombinations[0] || [];
+            for (const [cid, seq] of Object.entries(chains)) {
+                let m = 0;
+                for (let i = 0; i < seq.length; i++) m += AMINO_ACID_MASSES[seq[i]];
+                totalMass += m + MASS_H2O;
+            }
+            totalMass += nTermMass + cTermMass;
+            totalMass -= firstBridges.filter(b => b.c1 !== b.c2).length * 2 * MASS_H;
+
+            if (exploreAllSS && allSSCombinations.length > 1) {
+                document.getElementById('digestTotalMass').textContent = `variable (${allSSCombinations.length} combinaisons)`;
+            } else {
+                document.getElementById('digestTotalMass').textContent = totalMass.toFixed(4);
+            }
+            document.getElementById('digestPeptideCount').textContent = digestPeptides.length;
+            document.getElementById('digestChainsInfo').textContent =
+                Object.entries(chains).map(([id, s]) => `${id}: ${s.length} AA`).join(' | ');
+
+            // Mods info
+            const dMods = [];
+            if (cysAlkyl) dMods.push('C Alkyl');
+            if (metOx) dMods.push('M Ox');
+            if (nDeamid) dMods.push('N Deamid');
+            if (qDeamid) dMods.push('Q Deamid');
+            if (nTermMass) dMods.push(document.getElementById('digestNTerm').value);
+            if (cTermMass) dMods.push(document.getElementById('digestCTerm').value);
+            document.getElementById('digestModsInfo').textContent = dMods.length ? 'Mods: ' + dMods.join(', ') : '';
+
+            updateDigestDisplay();
+        } catch (e) {
+            alert('Erreur: ' + e.message);
+        }
+    }
+
+    // ============================================================
+    // DIGEST MATCHING & DISPLAY
+    // ============================================================
+    function findDigestMatches() {
+        const text = document.getElementById('digestMassList').value.trim();
+        if (!text || digestPeptides.length === 0) return;
+        const tol = parseFloat(document.getElementById('digestTolerance').value) || 0.5;
+        const expMasses = text.split('\n').map(l => parseFloat(l.trim())).filter(v => !isNaN(v));
+        matchedDigest = {};
+        for (let i = 0; i < digestPeptides.length; i++) {
+            for (const em of expMasses) {
+                const delta = Math.abs(digestPeptides[i].mh - em);
+                if (delta <= tol) {
+                    if (!matchedDigest[i] || delta < Math.abs(matchedDigest[i].delta))
+                        matchedDigest[i] = { expMass: em, delta: digestPeptides[i].mh - em };
+                }
+            }
+        }
+        document.getElementById('digestMatchStats').innerHTML =
+            `Matchs: <span>${Object.keys(matchedDigest).length}</span> peptides / ${expMasses.length} masses exp.`;
+        updateDigestDisplay();
+    }
+
+    function sortDigest(col) {
+        if (digestSortCol === col) digestSortAsc = !digestSortAsc;
+        else { digestSortCol = col; digestSortAsc = true; }
+        updateDigestDisplay();
+    }
+
+    function updateDigestDisplay() {
+        const chainFilters = {};
+        document.querySelectorAll('.digest-chain-filter').forEach(cb => {
+            chainFilters[cb.dataset.chain] = cb.checked;
+        });
+        const missedFilters = {};
+        document.querySelectorAll('.missed-filter').forEach(cb => { missedFilters[cb.dataset.missed] = cb.checked; });
+        const matchesOnly = document.getElementById('digestMatchesOnly').checked;
+        const ssOnly = document.getElementById('digestShowSSOnly').checked;
+
+        let filtered = digestPeptides.map((p, i) => ({ ...p, idx: i })).filter((p, i) => {
+            // Chain filter: linked peptides have chain like "A+B", check if any part matches
+            const pChains = p.chain.split('+');
+            const isLinked = pChains.length > 1 || p.linked;
+            if (isLinked) {
+                if (!chainFilters['+']) return false;
+            } else {
+                if (!chainFilters[p.chain]) return false;
+            }
+            const mc = String(Math.min(p.missed, 2));
+            if (!missedFilters[mc]) return false;
+            if (matchesOnly && !matchedDigest[i]) return false;
+            if (ssOnly && !p.hasSS && !p.linked) return false;
+            return true;
+        });
+
+        filtered.sort((a, b) => {
+            let va = a[digestSortCol], vb = b[digestSortCol];
+            if (typeof va === 'string') return digestSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+            return digestSortAsc ? va - vb : vb - va;
+        });
+
+        const tbody = document.getElementById('digestBody');
+        tbody.innerHTML = '';
+        for (const p of filtered) {
+            const match = matchedDigest[p.idx];
+            const tr = document.createElement('tr');
+            if (match) tr.classList.add('matched');
+            if (p.hasSS) tr.classList.add('has-ss');
+            tr.innerHTML = `
+                <td>${p.chain}</td>
+                <td class="seq">${p.seq}</td>
+                <td>${p.start}</td>
+                <td>${p.end}</td>
+                <td>${p.length}</td>
+                <td>${p.missed}</td>
+                <td>${p.mass.toFixed(4)}</td>
+                <td>${p.mh.toFixed(4)}</td>
+                <td>${match ? match.expMass.toFixed(4) : ''}</td>
+                <td>${match ? match.delta.toFixed(4) : ''}</td>
+                <td style="font-size:0.92em;">${p.ssInfo || ''}</td>
+                <td style="font-size:0.95em;">${p.mods}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+        document.getElementById('digestDisplayCount').textContent = filtered.length;
+    }
+
+    // ============================================================
+    // EXPORT
+    // ============================================================
+    function exportMSMSCSV() {
+        if (msmsFragments.length === 0) return;
+        const chains = getChains();
+        const filtered = getFilteredMSMS();
+        let csv = '# MS/MS Fragment Calculator - Export\n';
+        csv += '# Chaînes: ' + Object.entries(chains).map(([id, s]) => `${id}: ${s.length} AA`).join(', ') + '\n';
+        csv += '# Ponts S-S: ' + (document.getElementById('disulfideBonds').value || 'aucun') + '\n';
+        csv += '#\n';
+        csv += 'Chain,Ion,Position,Sequence,Modification,m/z_theo,m/z_exp,Delta_Da,Delta_mDa,Linked,Disulfide\n';
+        for (const f of filtered) {
+            const match = matchedMSMS[f.idx];
+            csv += `${f.chain},${f.ion}${f.pos},${f.pos},"${f.seq}",${f.mod},${f.mass_mz.toFixed(4)},`;
+            csv += `${match ? match.expMass.toFixed(4) : ''},${match ? match.delta.toFixed(4) : ''},${match ? (match.delta * 1000).toFixed(1) : ''},`;
+            csv += `"${f.linked}",${f.hasSS ? 'Yes' : ''}\n`;
+        }
+        downloadCSV(csv, 'msms_fragments.csv');
+    }
+
+    function exportDigestCSV() {
+        if (digestPeptides.length === 0) return;
+        const chains = getChains();
+        let csv = '# Digest - Export\n';
+        csv += '# Enzyme: ' + document.getElementById('enzymeSelect').value + '\n';
+        csv += '# Chaînes: ' + Object.entries(chains).map(([id, s]) => `${id}: ${s.length} AA`).join(', ') + '\n';
+        csv += '#\n';
+        csv += 'Chain,Sequence,Start,End,Length,MissedCleavages,Mass_neutral,MH_plus,m/z_exp,Delta_Da,SS_Info,Modifications\n';
+        for (let i = 0; i < digestPeptides.length; i++) {
+            const p = digestPeptides[i];
+            const match = matchedDigest[i];
+            csv += `${p.chain},"${p.seq}",${p.start},${p.end},${p.length},${p.missed},${p.mass.toFixed(4)},${p.mh.toFixed(4)},`;
+            csv += `${match ? match.expMass.toFixed(4) : ''},${match ? match.delta.toFixed(4) : ''},"${p.ssInfo}","${p.mods}"\n`;
+        }
+        downloadCSV(csv, 'digest_peptides.csv');
+    }
+
+    function downloadCSV(csv, filename) {
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+    </script>
+</body>
+</html>
