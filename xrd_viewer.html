@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XRD Viewer</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: #16213e;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 2px solid #0f3460;
+            flex-shrink: 0;
+        }
+        header h1 {
+            font-size: 1.3em;
+            color: #e94560;
+            white-space: nowrap;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 320px;
+            min-width: 320px;
+            background: #16213e;
+            border-right: 2px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            padding: 12px 15px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .sidebar-section h3 {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            color: #e94560;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        .drop-zone {
+            border: 2px dashed #0f3460;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(15, 52, 96, 0.2);
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.1);
+        }
+        .drop-zone p { font-size: 0.85em; color: #888; margin-top: 5px; }
+        .drop-zone .icon { font-size: 2em; }
+        #fileInput { display: none; }
+        .file-list { display: flex; flex-direction: column; gap: 6px; }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 5px;
+            background: rgba(15, 52, 96, 0.3);
+            font-size: 0.82em;
+        }
+        .file-item .color-dot {
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .file-item .color-dot:hover { border-color: #fff; }
+        .file-item .file-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-item .file-actions { display: flex; gap: 4px; }
+        .file-item button {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 1em;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .file-item button:hover { color: #e94560; background: rgba(233, 69, 96, 0.15); }
+        .file-item button.active { color: #4ecca3; }
+        .controls-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-row label {
+            font-size: 0.82em;
+            min-width: 80px;
+        }
+        .btn {
+            padding: 6px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 5px;
+            background: rgba(15, 52, 96, 0.5);
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 0.82em;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: #0f3460; border-color: #e94560; }
+        .btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+        .btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        select, input[type="number"] {
+            padding: 5px 8px;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 0.82em;
+            flex: 1;
+        }
+        input[type="number"] { width: 70px; flex: none; }
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.82em;
+            cursor: pointer;
+        }
+        .checkbox-row input[type="checkbox"] {
+            accent-color: #e94560;
+        }
+        .plot-container {
+            flex: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        #plotDiv {
+            flex: 1;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .info-bar {
+            background: #16213e;
+            padding: 6px 15px;
+            font-size: 0.78em;
+            color: #888;
+            border-top: 1px solid #0f3460;
+            display: flex;
+            gap: 20px;
+            flex-shrink: 0;
+        }
+        .info-bar span { color: #4ecca3; }
+        .offset-input {
+            width: 55px;
+            padding: 2px 5px;
+            border: 1px solid #0f3460;
+            border-radius: 3px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 0.8em;
+            text-align: center;
+        }
+        .peak-label {
+            font-size: 0.75em;
+            background: rgba(233, 69, 96, 0.2);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #e94560;
+        }
+        .smoothing-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #0f3460;
+            outline: none;
+        }
+        .smoothing-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e94560;
+            cursor: pointer;
+        }
+        .color-picker-hidden {
+            width: 0; height: 0; padding: 0; border: 0;
+            position: absolute; visibility: hidden;
+        }
+        .analysis-panel {
+            background: #16213e;
+            border-top: 2px solid #0f3460;
+            max-height: 280px;
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: none;
+        }
+        .analysis-panel.visible { display: block; }
+        .analysis-panel h3 {
+            font-size: 0.85em; text-transform: uppercase; color: #e94560;
+            letter-spacing: 1px; padding: 8px 15px 4px; margin: 0;
+        }
+        .peaks-table {
+            width: 100%; border-collapse: collapse; font-size: 0.78em;
+        }
+        .peaks-table th {
+            background: #0f3460; color: #e0e0e0; padding: 4px 8px;
+            text-align: left; position: sticky; top: 0; font-weight: 600;
+        }
+        .peaks-table td {
+            padding: 3px 8px; border-bottom: 1px solid #0f3460; color: #ccc;
+        }
+        .peaks-table tr:hover td { background: rgba(233,69,96,0.08); }
+        .wh-summary {
+            padding: 6px 15px; font-size: 0.8em; color: #ccc;
+            display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+        }
+        .wh-summary .val { color: #4ecca3; font-weight: bold; }
+        .wh-summary .err { color: #f9e2af; }
+        .meta-panel {
+            display: none; margin-top: 8px; padding: 8px 10px;
+            background: #16213e; border-radius: 6px; border: 1px solid #0f3460;
+            font-size: 0.78em; color: #ccc;
+        }
+        .meta-panel.visible { display: block; }
+        .meta-panel h4 { margin: 0 0 6px 0; color: #e94560; font-size: 1em; }
+        .meta-grid {
+            display: grid; grid-template-columns: auto 1fr; gap: 2px 10px;
+        }
+        .meta-grid .lbl { color: #888; white-space: nowrap; }
+        .meta-grid .val { color: #e0e0e0; font-family: Consolas, monospace; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>XRD Viewer</h1>
+        <div style="font-size:0.8em; color:#888;">Visualisation de diffractogrammes XRDML</div>
+    </header>
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h3>Fichiers</h3>
+                <div class="drop-zone" id="dropZone">
+                    <div class="icon">📂</div>
+                    <div>Glisser-déposer des fichiers .xrdml</div>
+                    <p>ou cliquer pour parcourir</p>
+                </div>
+                <input type="file" id="fileInput" multiple accept=".xrdml,.xml">
+                <div class="file-list" id="fileList" style="margin-top: 8px;"></div>
+                <div class="meta-panel" id="metaPanel"></div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Affichage</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>Titre :</label>
+                        <input type="text" id="plotTitle" value="" placeholder="Diffractogramme XRD" style="flex:1; padding:5px 8px; border:1px solid #0f3460; border-radius:4px; background:#1a1a2e; color:#e0e0e0; font-size:0.82em;" onchange="updatePlot()">
+                    </div>
+                    <div class="control-row">
+                        <label>Axe Y :</label>
+                        <div class="btn-group">
+                            <button class="btn active" data-scale="linear" onclick="setYScale('linear')">Linéaire</button>
+                            <button class="btn" data-scale="log" onclick="setYScale('log')">Log</button>
+                            <button class="btn" data-scale="sqrt" onclick="setYScale('sqrt')">√</button>
+                        </div>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="normalizeCheck" onchange="updatePlot()">
+                        Normaliser (0-1)
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="normAreaCheck" onchange="updatePlot()">
+                        Normaliser par aire
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="bgSubtractCheck" onchange="updatePlot()">
+                        Soustraire fond continu
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="showGridCheck" checked onchange="updatePlot()">
+                        Grille
+                    </label>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Lissage</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>Savitzky-Golay :</label>
+                        <span id="smoothVal" style="font-size:0.82em; color:#4ecca3;">0</span>
+                    </div>
+                    <input type="range" class="smoothing-slider" id="smoothSlider" min="0" max="25" value="0" step="1" oninput="document.getElementById('smoothVal').textContent=this.value; updatePlot();">
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Décalage vertical</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>Offset :</label>
+                        <input type="number" id="globalOffset" value="0" step="100" style="width:70px;" onchange="updatePlot()">
+                        <span style="font-size:0.78em;color:#888;">entre spectres</span>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="autoOffsetCheck" onchange="updatePlot()">
+                        Auto-offset
+                    </label>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Plage 2θ</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>Min :</label>
+                        <input type="number" id="thetaMin" value="" step="0.1" placeholder="auto" onchange="updatePlot()">
+                        <label>Max :</label>
+                        <input type="number" id="thetaMax" value="" step="0.1" placeholder="auto" onchange="updatePlot()">
+                    </div>
+                    <button class="btn" onclick="resetRange()">Réinitialiser plage</button>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Pics</h3>
+                <div class="controls-group">
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="showPeaksCheck" onchange="updatePlot()">
+                        Détecter les pics
+                    </label>
+                    <div class="control-row">
+                        <label>Seuil :</label>
+                        <input type="number" id="peakThreshold" value="3" step="0.5" min="1" style="width:60px;" onchange="updatePlot()">
+                        <span style="font-size:0.78em;color:#888;">× σ</span>
+                    </div>
+                    <div class="control-row">
+                        <label>Min distance :</label>
+                        <input type="number" id="peakDistance" value="10" step="1" min="1" style="width:60px;" onchange="updatePlot()">
+                        <span style="font-size:0.78em;color:#888;">pts</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Analyse cristallographique</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>λ Kα1 (Å) :</label>
+                        <input type="number" id="xrdWavelength" value="1.5406" step="0.0001" style="width:82px;" title="Longueur d'onde Kα1">
+                    </div>
+                    <div class="control-row">
+                        <label>λ pond. (Å) :</label>
+                        <input type="number" id="xrdWavelengthWeighted" value="1.5419" step="0.0001" style="width:82px;" title="λ = (2·Kα1 + Kα2)/3">
+                    </div>
+                    <div class="control-row">
+                        <label>λ utilisée :</label>
+                        <select id="lambdaMode" style="flex:1;" title="Kα1 si monochromateur, pondérée si Kα1+Kα2 non résolues">
+                            <option value="weighted">Pondérée (Kα1+Kα2)</option>
+                            <option value="kalpha1" selected>Kα1 seule</option>
+                        </select>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="corrSinTheta">
+                        Correction fente fixe (I×sinθ)
+                    </label>
+                    <div class="control-row">
+                        <label>K (Scherrer) :</label>
+                        <input type="number" id="scherrerK" value="0.89" step="0.01" min="0.1" max="1.5" style="width:60px;" title="Facteur de forme Scherrer (0.89 sphère, 0.94 cube)">
+                    </div>
+                    <div class="control-row">
+                        <label>β instrument :</label>
+                        <select id="instrMode" style="flex:1;" onchange="toggleInstrManual()" title="Source du β instrumental (polynôme PANalytical X'Pert MPD 1)">
+                            <option value="without_mono" selected>Sans monochromateur</option>
+                            <option value="with_mono">Avec monochromateur</option>
+                            <option value="manual">Manuel (°)</option>
+                        </select>
+                    </div>
+                    <div class="control-row" id="instrManualRow" style="display:none;">
+                        <label>β manuel (°) :</label>
+                        <input type="number" id="instrBroadening" value="0.05" step="0.01" min="0" style="width:60px;" title="Élargissement instrumental manuel (FWHM)">
+                    </div>
+                    <div style="font-size:0.73em; color:#888; padding:2px 0 4px; line-height:1.4;" id="instrPolyInfo">
+                        β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>
+                        A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵, B₃=−6.44×10⁻⁸
+                    </div>
+                    <button class="btn" onclick="runAnalysis()" style="margin-top:4px;">Analyser les pics</button>
+                    <button class="btn" onclick="showWHPlot()" style="margin-top:2px;">📈 Graphe Williamson-Hall</button>
+                    <button class="btn" onclick="showSSPPlot()" style="margin-top:2px;">📊 Size-Strain Plot</button>
+                    <button class="btn" onclick="exportPeaksCSV()" style="margin-top:2px;">Exporter (CSV)</button>
+                    <button class="btn" onclick="exportPeaksXLSX()" style="margin-top:2px;">Exporter (XLSX)</button>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Export</h3>
+                <div class="controls-group">
+                    <div class="control-row">
+                        <label>Fond :</label>
+                        <select id="exportBg" style="flex:1;">
+                            <option value="dark">Sombre (écran)</option>
+                            <option value="white">Blanc (impression)</option>
+                            <option value="transparent">Transparent</option>
+                        </select>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn" onclick="exportPNG()">PNG</button>
+                        <button class="btn" onclick="exportSVG()">SVG</button>
+                        <button class="btn" onclick="exportCSV()">CSV</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="plot-container">
+            <div id="plotDiv"></div>
+            <div class="analysis-panel" id="analysisPanel">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Paramètres cristallographiques</h3>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <button onclick="showWHPlot()" style="background:rgba(233,69,96,0.15);border:1px solid #e94560;color:#e94560;cursor:pointer;padding:3px 10px;border-radius:4px;font-size:0.8em;" title="Ouvrir graphe Williamson-Hall">📈 W-H</button>
+                        <button onclick="showSSPPlot()" style="background:rgba(78,204,163,0.15);border:1px solid #4ecca3;color:#4ecca3;cursor:pointer;padding:3px 10px;border-radius:4px;font-size:0.8em;" title="Ouvrir Size-Strain Plot">📊 SSP</button>
+                        <button onclick="document.getElementById('analysisPanel').classList.remove('visible')" style="background:none;border:none;color:#888;cursor:pointer;padding:4px 12px;font-size:1.1em;" title="Fermer">✕</button>
+                    </div>
+                </div>
+                <div class="wh-summary" id="whSummary"></div>
+                <div id="peaksTableContainer" style="padding:0 0 8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-bar" id="infoBar">
+        <div>Fichiers chargés : <span id="fileCount">0</span></div>
+        <div>Curseur : 2θ = <span id="cursorPos">-</span></div>
+        <div id="wavelengthInfo"></div>
+    </div>
+
+    <script>
+    const COLORS = [
+        '#e94560', '#4ecca3', '#00b4d8', '#f4a261', '#a78bfa',
+        '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#fb923c',
+        '#c084fc', '#2dd4bf', '#f87171', '#a3e635', '#38bdf8'
+    ];
+
+    let datasets = [];
+    let yScaleMode = 'linear';
+
+    // ---- XRDML Parser ----
+    function parseXRDML(xmlText, fileName) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, 'text/xml');
+        const ns = 'http://www.xrdml.com/XRDMeasurement/1.5';
+
+        function q(el, tag) {
+            return el.getElementsByTagNameNS(ns, tag);
+        }
+
+        const measurements = q(doc, 'xrdMeasurement');
+        const results = [];
+
+        for (const meas of measurements) {
+            // Wavelength
+            const wl = q(meas, 'kAlpha1')[0];
+            const wavelength = wl ? parseFloat(wl.textContent) : 1.5406;
+
+            const scans = q(meas, 'scan');
+            let scanIdx = 0;
+            for (const scan of scans) {
+                const dataPoints = q(scan, 'dataPoints')[0];
+                if (!dataPoints) continue;
+
+                // Positions
+                const positionsEls = q(dataPoints, 'positions');
+                let twoThetaStart, twoThetaEnd;
+                for (const p of positionsEls) {
+                    if (p.getAttribute('axis') === '2Theta') {
+                        twoThetaStart = parseFloat(q(p, 'startPosition')[0].textContent);
+                        twoThetaEnd = parseFloat(q(p, 'endPosition')[0].textContent);
+                    }
+                }
+
+                // Intensities
+                const intensStr = q(dataPoints, 'intensities')[0].textContent.trim();
+                const intensities = intensStr.split(/\s+/).map(Number);
+
+                // Generate 2theta array
+                const n = intensities.length;
+                const twoTheta = [];
+                for (let i = 0; i < n; i++) {
+                    twoTheta.push(twoThetaStart + (twoThetaEnd - twoThetaStart) * i / (n - 1));
+                }
+
+                // Counting time
+                const ctEl = q(dataPoints, 'commonCountingTime')[0];
+                const countingTime = ctEl ? parseFloat(ctEl.textContent) : null;
+
+                // Step size
+                const nPoints = intensities.length;
+                const stepSize = nPoints > 1 ? (twoThetaEnd - twoThetaStart) / (nPoints - 1) : null;
+
+                // Metadata
+                const tubeEl = q(meas, 'xRayTube')[0];
+                const tension = tubeEl ? q(tubeEl, 'tension')[0]?.textContent : '';
+                const current = tubeEl ? q(tubeEl, 'current')[0]?.textContent : '';
+                const anode = tubeEl ? q(tubeEl, 'anodeMaterial')[0]?.textContent : '';
+
+                // Wavelengths
+                const kAlpha2El = q(meas, 'kAlpha2')[0];
+                const kBetaEl = q(meas, 'kBeta')[0];
+                const kAlpha2 = kAlpha2El ? parseFloat(kAlpha2El.textContent) : null;
+                const kBeta = kBetaEl ? parseFloat(kBetaEl.textContent) : null;
+
+                // Scan info
+                const scanMode = scan.getAttribute('mode') || '';
+                const scanAxis = scan.getAttribute('scanAxis') || '';
+
+                // Detector
+                const detEl = q(meas, 'detector')[0];
+                const detectorName = detEl ? detEl.getAttribute('name') : '';
+
+                // Slits
+                const divSlitEl = q(meas, 'divergenceSlit')[0];
+                const divSlit = divSlitEl ? (q(divSlitEl, 'angle')[0]?.textContent || divSlitEl.getAttribute('name') || '') : '';
+                const asSlitEls = q(meas, 'antiScatterSlit');
+                const asSlit = asSlitEls.length > 0 ? (asSlitEls[0].getAttribute('name') || '') : '';
+
+                // Filter
+                const filterEl = q(meas, 'filter')[0];
+                const filterMat = filterEl ? (q(filterEl, 'material')[0]?.textContent || '') : '';
+                const filterThick = filterEl ? (q(filterEl, 'thickness')[0]?.textContent || '') : '';
+
+                // Timestamps
+                const startTime = q(scan, 'startTimeStamp')[0]?.textContent || '';
+                const endTime = q(scan, 'endTimeStamp')[0]?.textContent || '';
+
+                // Spinning
+                const spinEl = q(meas, 'spinnerRevolutionTime')[0];
+                const spinTime = spinEl ? parseFloat(spinEl.textContent) : null;
+
+                const label = scans.length > 1 ? `${fileName} #${scanIdx + 1}` : fileName;
+
+                results.push({
+                    label,
+                    fileName,
+                    twoTheta,
+                    intensities,
+                    wavelength,
+                    wavelengthWeighted: kAlpha2 ? (2 * wavelength + kAlpha2) / 3 : wavelength,
+                    countingTime,
+                    metadata: {
+                        tension, current, anode, startTime, endTime,
+                        kAlpha2, kBeta,
+                        twoThetaStart, twoThetaEnd, stepSize, nPoints,
+                        scanMode, scanAxis,
+                        detectorName,
+                        divSlit, asSlit,
+                        filterMat, filterThick,
+                        spinTime
+                    },
+                    visible: true,
+                    color: COLORS[(datasets.length + results.length) % COLORS.length]
+                });
+                scanIdx++;
+            }
+        }
+        return results;
+    }
+
+    // ---- Signal Processing ----
+    function savitzkyGolay(data, windowSize) {
+        if (windowSize < 1) return data.slice();
+        const w = windowSize * 2 + 1;
+        if (w > data.length) return data.slice();
+        const result = new Array(data.length);
+        // Simple moving average as SG order 0
+        for (let i = 0; i < data.length; i++) {
+            let sum = 0, count = 0;
+            for (let j = -windowSize; j <= windowSize; j++) {
+                const idx = i + j;
+                if (idx >= 0 && idx < data.length) {
+                    // Triangular weighting for better peak preservation
+                    const weight = windowSize + 1 - Math.abs(j);
+                    sum += data[idx] * weight;
+                    count += weight;
+                }
+            }
+            result[i] = sum / count;
+        }
+        return result;
+    }
+
+    function subtractBackground(twoTheta, intensities, windowPct = 5) {
+        // Simple rolling minimum background estimation
+        const n = intensities.length;
+        const winSize = Math.max(3, Math.floor(n * windowPct / 100));
+        const bg = new Array(n);
+        for (let i = 0; i < n; i++) {
+            let minVal = Infinity;
+            for (let j = Math.max(0, i - winSize); j <= Math.min(n - 1, i + winSize); j++) {
+                if (intensities[j] < minVal) minVal = intensities[j];
+            }
+            bg[i] = minVal;
+        }
+        // Smooth background
+        const smoothBg = savitzkyGolay(bg, Math.floor(winSize / 2));
+        return intensities.map((v, i) => Math.max(0, v - smoothBg[i]));
+    }
+
+    function normalizeMinMax(data) {
+        const max = Math.max(...data);
+        const min = Math.min(...data);
+        const range = max - min || 1;
+        return data.map(v => (v - min) / range);
+    }
+
+    function normalizeByArea(twoTheta, intensities) {
+        let area = 0;
+        for (let i = 1; i < twoTheta.length; i++) {
+            area += (intensities[i] + intensities[i - 1]) / 2 * (twoTheta[i] - twoTheta[i - 1]);
+        }
+        if (area === 0) area = 1;
+        return intensities.map(v => v / area);
+    }
+
+    function detectPeaks(twoTheta, intensities, thresholdSigma, minDistance) {
+        const mean = intensities.reduce((a, b) => a + b, 0) / intensities.length;
+        const std = Math.sqrt(intensities.reduce((a, b) => a + (b - mean) ** 2, 0) / intensities.length);
+        const threshold = mean + thresholdSigma * std;
+
+        const peaks = [];
+        for (let i = 1; i < intensities.length - 1; i++) {
+            if (intensities[i] > intensities[i - 1] &&
+                intensities[i] > intensities[i + 1] &&
+                intensities[i] > threshold) {
+                // FWHM : interpolation linéaire à mi-hauteur
+                const halfMax = intensities[i] / 2;
+                let xLeft = twoTheta[i], xRight = twoTheta[i];
+                for (let j = i; j > 0; j--) {
+                    if (intensities[j] <= halfMax) {
+                        const t = (halfMax - intensities[j]) / (intensities[j + 1] - intensities[j]);
+                        xLeft = twoTheta[j] + t * (twoTheta[j + 1] - twoTheta[j]);
+                        break;
+                    }
+                }
+                for (let j = i; j < intensities.length - 1; j++) {
+                    if (intensities[j] <= halfMax) {
+                        const t = (halfMax - intensities[j]) / (intensities[j - 1] - intensities[j]);
+                        xRight = twoTheta[j] + t * (twoTheta[j - 1] - twoTheta[j]);
+                        break;
+                    }
+                }
+                const fwhm = Math.abs(xRight - xLeft);
+                peaks.push({ idx: i, x: twoTheta[i], y: intensities[i], fwhm });
+            }
+        }
+
+        // Filter by minimum distance
+        peaks.sort((a, b) => b.y - a.y);
+        const filtered = [];
+        for (const p of peaks) {
+            let tooClose = false;
+            for (const f of filtered) {
+                if (Math.abs(p.idx - f.idx) < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (!tooClose) filtered.push(p);
+        }
+        return filtered.sort((a, b) => a.x - b.x);
+    }
+
+    function applyTransform(ds, idx) {
+        let y = ds.intensities.slice();
+        let x = ds.twoTheta.slice();
+
+        const smooth = parseInt(document.getElementById('smoothSlider').value);
+        if (smooth > 0) y = savitzkyGolay(y, smooth);
+
+        if (document.getElementById('bgSubtractCheck').checked) {
+            y = subtractBackground(x, y);
+        }
+
+        if (document.getElementById('normalizeCheck').checked) {
+            y = normalizeMinMax(y);
+        } else if (document.getElementById('normAreaCheck').checked) {
+            y = normalizeByArea(x, y);
+        }
+
+        // Offset
+        const autoOffset = document.getElementById('autoOffsetCheck').checked;
+        const globalOffset = parseFloat(document.getElementById('globalOffset').value) || 0;
+        let offset = 0;
+        if (autoOffset) {
+            offset = idx * (Math.max(...y) * 0.3 + 50);
+        } else if (globalOffset > 0) {
+            offset = idx * globalOffset;
+        }
+        if (offset) y = y.map(v => v + offset);
+
+        // Scale
+        if (yScaleMode === 'sqrt') {
+            y = y.map(v => Math.sqrt(Math.max(0, v)));
+        }
+
+        return { x, y };
+    }
+
+    // ---- Plot ----
+    function updatePlot() {
+        const traces = [];
+        const annotations = [];
+        const showPeaks = document.getElementById('showPeaksCheck').checked;
+        const peakThreshold = parseFloat(document.getElementById('peakThreshold').value) || 3;
+        const peakDistance = parseInt(document.getElementById('peakDistance').value) || 10;
+        const showGrid = document.getElementById('showGridCheck').checked;
+
+        const visibleDatasets = datasets.filter(d => d.visible);
+
+        visibleDatasets.forEach((ds, idx) => {
+            const { x, y } = applyTransform(ds, idx);
+
+            traces.push({
+                x, y,
+                type: 'scattergl',
+                mode: 'lines',
+                name: ds.label,
+                line: { color: ds.color, width: 1.5 },
+                hovertemplate: '2θ = %{x:.3f}°<br>I = %{y:.1f}<extra>' + ds.label + '</extra>'
+            });
+
+            if (showPeaks) {
+                const peaks = detectPeaks(x, y, peakThreshold, peakDistance);
+                if (peaks.length > 0) {
+                    traces.push({
+                        x: peaks.map(p => p.x),
+                        y: peaks.map(p => p.y),
+                        type: 'scatter',
+                        mode: 'markers',
+                        marker: { color: ds.color, size: 7, symbol: 'triangle-down' },
+                        name: ds.label + ' pics',
+                        showlegend: false,
+                        hovertemplate: '2θ = %{x:.3f}°<br>I = %{y:.1f}<extra>Pic</extra>'
+                    });
+
+                    peaks.forEach(p => {
+                        annotations.push({
+                            x: p.x, y: p.y,
+                            text: p.x.toFixed(2) + '° (Δ' + p.fwhm.toFixed(2) + '°)',
+                            showarrow: true,
+                            arrowhead: 0,
+                            arrowsize: 0.5,
+                            arrowwidth: 1,
+                            arrowcolor: ds.color,
+                            ax: 0, ay: -25,
+                            font: { size: 9, color: ds.color },
+                            bgcolor: 'rgba(26,26,46,0.8)',
+                            borderpad: 2
+                        });
+                    });
+                }
+            }
+        });
+
+        const thetaMin = document.getElementById('thetaMin').value;
+        const thetaMax = document.getElementById('thetaMax').value;
+
+        let yAxisType = yScaleMode === 'log' ? 'log' : 'linear';
+        let yTitle = 'Intensité (coups)';
+        if (document.getElementById('normalizeCheck').checked) yTitle = 'Intensité normalisée';
+        else if (document.getElementById('normAreaCheck').checked) yTitle = 'Intensité (norm. aire)';
+        if (yScaleMode === 'sqrt') yTitle = '√(' + yTitle + ')';
+
+        const layout = {
+            paper_bgcolor: '#1a1a2e',
+            plot_bgcolor: '#1a1a2e',
+            font: { color: '#e0e0e0', family: 'Segoe UI' },
+            title: { text: document.getElementById('plotTitle').value || '', font: { size: 15, color: '#e0e0e0' }, xref: 'paper', x: 0.5, xanchor: 'center' },
+            xaxis: {
+                title: { text: '2θ (°)', font: { size: 13 } },
+                tickfont: { size: 11 },
+                gridcolor: showGrid ? '#2a2a4a' : 'transparent',
+                zerolinecolor: '#2a2a4a',
+                range: thetaMin && thetaMax ? [parseFloat(thetaMin), parseFloat(thetaMax)] : undefined,
+                dtick: 5
+            },
+            yaxis: {
+                title: { text: yTitle, font: { size: 13 } },
+                tickfont: { size: 11 },
+                gridcolor: showGrid ? '#2a2a4a' : 'transparent',
+                zerolinecolor: '#2a2a4a',
+                type: yAxisType,
+                rangemode: yAxisType === 'log' ? undefined : 'tozero'
+            },
+            legend: {
+                bgcolor: 'rgba(22,33,62,0.9)',
+                bordercolor: '#0f3460',
+                borderwidth: 1,
+                font: { size: 11 }
+            },
+            margin: { l: 60, r: 20, t: 40, b: 50 },
+            annotations,
+            hovermode: 'x unified',
+            dragmode: 'zoom'
+        };
+
+        const config = {
+            responsive: true,
+            displaylogo: false,
+            modeBarButtonsToAdd: ['toggleSpikelines'],
+            toImageButtonOptions: {
+                format: 'png',
+                filename: 'xrd_pattern',
+                width: 1600,
+                height: 900,
+                scale: 2
+            }
+        };
+
+        Plotly.react('plotDiv', traces, layout, config);
+
+        // Update info bar
+        document.getElementById('fileCount').textContent = datasets.length;
+        if (visibleDatasets.length > 0) {
+            const ds0 = visibleDatasets[0];
+            const wlInfo = `λ = ${ds0.wavelength.toFixed(4)} Å (${ds0.metadata.anode || 'Cu'} Kα1)`;
+            document.getElementById('wavelengthInfo').textContent = wlInfo;
+        }
+
+        // Cursor tracking
+        const plotDiv = document.getElementById('plotDiv');
+        plotDiv.on('plotly_hover', function(data) {
+            if (data.points && data.points[0]) {
+                document.getElementById('cursorPos').textContent = data.points[0].x.toFixed(3) + '°';
+            }
+        });
+    }
+
+    // ---- UI Handlers ----
+    function setYScale(mode) {
+        yScaleMode = mode;
+        document.querySelectorAll('[data-scale]').forEach(b => {
+            b.classList.toggle('active', b.dataset.scale === mode);
+        });
+        updatePlot();
+    }
+
+    function resetRange() {
+        document.getElementById('thetaMin').value = '';
+        document.getElementById('thetaMax').value = '';
+        updatePlot();
+    }
+
+    function renderFileList() {
+        const container = document.getElementById('fileList');
+        container.innerHTML = '';
+        datasets.forEach((ds, idx) => {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            div.style.cursor = 'pointer';
+            div.innerHTML = `
+                <div class="color-dot" style="background:${ds.color}" title="Changer couleur"></div>
+                <div class="file-name" title="Double-clic pour renommer / Clic pour infos">${ds.label}</div>
+                <div class="file-actions">
+                    <button title="Infos mesure" onclick="showMetadata(${idx})">ℹ</button>
+                    <button class="${ds.visible ? 'active' : ''}" title="Visibilité" onclick="toggleVisibility(${idx})">
+                        ${ds.visible ? '👁' : '👁‍🗨'}
+                    </button>
+                    <button title="Supprimer" onclick="removeDataset(${idx})">✕</button>
+                </div>
+            `;
+            // Click on file name → show metadata, double-click → rename
+            const nameEl = div.querySelector('.file-name');
+            nameEl.addEventListener('dblclick', () => {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = ds.label;
+                input.style.cssText = 'width:100%; padding:2px 4px; border:1px solid #e94560; border-radius:3px; background:#1a1a2e; color:#e0e0e0; font-size:0.82em;';
+                nameEl.replaceWith(input);
+                input.focus();
+                input.select();
+                const commit = () => {
+                    const val = input.value.trim();
+                    if (val) ds.label = val;
+                    renderFileList();
+                    updatePlot();
+                };
+                input.addEventListener('blur', commit);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = ds.label; input.blur(); } });
+            });
+            // Color picker
+            const dot = div.querySelector('.color-dot');
+            const picker = document.createElement('input');
+            picker.type = 'color';
+            picker.className = 'color-picker-hidden';
+            picker.value = ds.color;
+            picker.addEventListener('input', (e) => {
+                ds.color = e.target.value;
+                dot.style.background = e.target.value;
+                updatePlot();
+            });
+            div.appendChild(picker);
+            dot.addEventListener('click', () => picker.click());
+
+            container.appendChild(div);
+        });
+    }
+
+    function toggleVisibility(idx) {
+        datasets[idx].visible = !datasets[idx].visible;
+        renderFileList();
+        updatePlot();
+    }
+
+    function removeDataset(idx) {
+        datasets.splice(idx, 1);
+        renderFileList();
+        updatePlot();
+    }
+
+    function showMetadata(idx) {
+        const ds = datasets[idx];
+        const m = ds.metadata;
+        const panel = document.getElementById('metaPanel');
+
+        // Toggle: click again to hide
+        if (panel.classList.contains('visible') && panel.dataset.idx === String(idx)) {
+            panel.classList.remove('visible');
+            return;
+        }
+        panel.dataset.idx = idx;
+
+        const formatDate = (iso) => {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        };
+
+        // Duration
+        let duration = '—';
+        if (m.startTime && m.endTime) {
+            const sec = Math.round((new Date(m.endTime) - new Date(m.startTime)) / 1000);
+            const min = Math.floor(sec / 60);
+            duration = min > 0 ? `${min} min ${sec % 60} s` : `${sec} s`;
+        }
+
+        let html = `<h4 style="color:${ds.color}">${ds.label}</h4>`;
+        html += '<div class="meta-grid">';
+        const row = (lbl, val) => { if (val) html += `<span class="lbl">${lbl}</span><span class="val">${val}</span>`; };
+        row('λ Kα1', `${ds.wavelength.toFixed(4)} Å`);
+        if (m.kAlpha2) row('λ Kα2', `${m.kAlpha2.toFixed(4)} Å`);
+        if (m.kBeta) row('λ Kβ', `${m.kBeta.toFixed(4)} Å`);
+        row('Anode', m.anode);
+        row('Tension', m.tension ? `${m.tension} kV` : '');
+        row('Courant', m.current ? `${m.current} mA` : '');
+        row('Plage 2θ', m.twoThetaStart != null ? `${m.twoThetaStart.toFixed(3)}° → ${m.twoThetaEnd.toFixed(3)}°` : '');
+        row('Pas', m.stepSize != null ? `${m.stepSize.toFixed(4)}°` : '');
+        row('Points', m.nPoints);
+        row('Temps/pas', ds.countingTime ? `${ds.countingTime.toFixed(1)} s` : '');
+        row('Durée totale', duration);
+        row('Mode', [m.scanMode, m.scanAxis].filter(Boolean).join(' / '));
+        row('Détecteur', m.detectorName);
+        row('Fente div.', m.divSlit ? `${m.divSlit}°` : '');
+        row('Fente anti-diff.', m.asSlit);
+        row('Filtre', m.filterMat ? `${m.filterMat}${m.filterThick ? ' (' + m.filterThick + ' mm)' : ''}` : '');
+        if (m.spinTime) row('Rotation', `${m.spinTime} s/tour`);
+        row('Date', formatDate(m.startTime));
+        html += '</div>';
+
+        panel.innerHTML = html;
+        panel.classList.add('visible');
+    }
+
+    function handleFiles(files) {
+        for (const file of files) {
+            if (!file.name.match(/\.(xrdml|xml)$/i)) continue;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const parsed = parseXRDML(e.target.result, file.name.replace(/\.[^/.]+$/, ''));
+                datasets.push(...parsed);
+                // Auto-update wavelength from first loaded file
+                if (parsed.length > 0 && parsed[0].wavelength) {
+                    document.getElementById('xrdWavelength').value = parsed[0].wavelength.toFixed(4);
+                    if (parsed[0].wavelengthWeighted) {
+                        document.getElementById('xrdWavelengthWeighted').value = parsed[0].wavelengthWeighted.toFixed(4);
+                    }
+                }
+                renderFileList();
+                updatePlot();
+                // Auto-show metadata for first loaded file
+                if (datasets.length === parsed.length) showMetadata(datasets.length - 1);
+            };
+            reader.readAsText(file);
+        }
+    }
+
+    // Export helpers
+    function getExportColors(bgMode) {
+        if (bgMode === 'white') return { paper: '#ffffff', plot: '#ffffff', font: '#222222', grid: '#cccccc', zero: '#999999' };
+        if (bgMode === 'transparent') return { paper: 'rgba(0,0,0,0)', plot: 'rgba(0,0,0,0)', font: '#222222', grid: '#cccccc', zero: '#999999' };
+        return { paper: '#1a1a2e', plot: '#1a1a2e', font: '#e0e0e0', grid: '#2a2a4a', zero: '#2a2a4a' };
+    }
+
+    function scaleLayoutFonts(obj, scale) {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) { obj.forEach(item => scaleLayoutFonts(item, scale)); return; }
+        for (const [key, val] of Object.entries(obj)) {
+            if ((key === 'font' || key === 'tickfont') && val && typeof val.size === 'number') {
+                val.size = Math.round(val.size * scale);
+            } else if (typeof val === 'object') {
+                scaleLayoutFonts(val, scale);
+            }
+        }
+    }
+
+    function exportImage(format) {
+        const bgMode = document.getElementById('exportBg').value;
+        const bgColors = getExportColors(bgMode);
+        const showPeaks = document.getElementById('showPeaksCheck').checked;
+        const peakThreshold = parseFloat(document.getElementById('peakThreshold').value) || 3;
+        const peakDistance = parseInt(document.getElementById('peakDistance').value) || 10;
+        const showGrid = document.getElementById('showGridCheck').checked;
+        const visibleDatasets = datasets.filter(d => d.visible);
+        const panelVisible = document.getElementById('analysisPanel').classList.contains('visible') && lastAnalysisResults.length > 0;
+
+        const traces = [];
+        const annotations = [];
+        // If table is shown, plot goes on yaxis/xaxis (domain top portion)
+        const yRef = panelVisible ? 'y2' : 'y';
+        const xRef = panelVisible ? 'x2' : 'x';
+
+        visibleDatasets.forEach((ds, idx) => {
+            const { x, y } = applyTransform(ds, idx);
+            const tr = { x, y, type: 'scatter', mode: 'lines', name: ds.label, line: { color: ds.color, width: 1.5 } };
+            if (panelVisible) { tr.xaxis = 'x2'; tr.yaxis = 'y2'; }
+            traces.push(tr);
+            if (showPeaks && !panelVisible) {
+                const peaks = detectPeaks(x, y, peakThreshold, peakDistance);
+                if (peaks.length > 0) {
+                    traces.push({ x: peaks.map(p => p.x), y: peaks.map(p => p.y), type: 'scatter', mode: 'markers', marker: { color: ds.color, size: 7, symbol: 'triangle-down' }, showlegend: false });
+                    peaks.forEach(p => {
+                        annotations.push({ x: p.x, y: p.y, text: p.x.toFixed(2) + '° (Δ' + p.fwhm.toFixed(2) + '°)', showarrow: true, arrowhead: 0, arrowsize: 0.5, arrowwidth: 1, arrowcolor: ds.color, ax: 0, ay: -25, font: { size: 9, color: ds.color }, bgcolor: bgMode === 'dark' ? 'rgba(26,26,46,0.8)' : 'rgba(255,255,255,0.8)', borderpad: 2 });
+                    });
+                }
+            }
+        });
+
+        const thetaMin = document.getElementById('thetaMin').value;
+        const thetaMax = document.getElementById('thetaMax').value;
+        let yAxisType = yScaleMode === 'log' ? 'log' : 'linear';
+        let yTitle = 'Intensité (coups)';
+        if (document.getElementById('normalizeCheck').checked) yTitle = 'Intensité normalisée';
+        else if (document.getElementById('normAreaCheck').checked) yTitle = 'Intensité (norm. aire)';
+        if (yScaleMode === 'sqrt') yTitle = '√(' + yTitle + ')';
+
+        const isDark = bgMode === 'dark';
+        const tableFontColor = isDark ? '#e0e0e0' : '#222222';
+        const tableHeaderBg = isDark ? '#0f3460' : '#dddddd';
+        const tableCellBg = isDark ? '#1a1a2e' : '#ffffff';
+        const tableLineBg = isDark ? '#16213e' : '#f4f4f4';
+
+        const layout = {
+            paper_bgcolor: bgColors.paper, plot_bgcolor: bgColors.plot,
+            font: { color: bgColors.font, family: 'Segoe UI' },
+            title: { text: document.getElementById('plotTitle').value || '', font: { size: 15, color: bgColors.font }, xref: 'paper', x: 0.5, xanchor: 'center' },
+            legend: { bgcolor: 'rgba(0,0,0,0.05)', borderwidth: 0, font: { size: 11 } },
+            annotations,
+            hovermode: 'x unified', dragmode: 'zoom'
+        };
+
+        if (panelVisible) {
+            // Subplot: spectrum on top (65%), table on bottom (35%)
+            layout.xaxis2 = {
+                title: { text: '2θ (°)', font: { size: 13 } }, tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero,
+                range: thetaMin && thetaMax ? [parseFloat(thetaMin), parseFloat(thetaMax)] : undefined,
+                dtick: 5, domain: [0.05, 1], anchor: 'y2'
+            };
+            layout.yaxis2 = {
+                title: { text: yTitle, font: { size: 13 } }, tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero,
+                type: yAxisType, rangemode: yAxisType === 'log' ? undefined : 'tozero',
+                domain: [0.48, 1], anchor: 'x2'
+            };
+            layout.margin = { l: 60, r: 20, t: 40, b: 20 };
+
+            // Build table trace
+            const headers = ['Spectre', '2θ (°)', 'd (Å)', 'Δd (Å)', 'FWHM (°)', 'FWHM corr.', 'D (nm)', 'Intensité', 'Aire'];
+            const cellValues = [
+                lastAnalysisResults.map(r => r.spectrum),
+                lastAnalysisResults.map(r => r.twoTheta.toFixed(3)),
+                lastAnalysisResults.map(r => r.d.toFixed(4)),
+                lastAnalysisResults.map(r => '±' + r.deltaD.toFixed(4)),
+                lastAnalysisResults.map(r => r.fwhm.toFixed(3)),
+                lastAnalysisResults.map(r => r.fwhmCorr.toFixed(3)),
+                lastAnalysisResults.map(r => r.D_nm.toFixed(1)),
+                lastAnalysisResults.map(r => r.intensity.toFixed(0)),
+                lastAnalysisResults.map(r => r.area.toFixed(0)),
+            ];
+            // Row background: light tint of spectrum color
+            const rowBgColors = lastAnalysisResults.map(r => {
+                const hex = r.color.replace('#', '');
+                const red = parseInt(hex.substring(0, 2), 16);
+                const green = parseInt(hex.substring(2, 4), 16);
+                const blue = parseInt(hex.substring(4, 6), 16);
+                return isDark
+                    ? `rgba(${red},${green},${blue},0.15)`
+                    : `rgba(${red},${green},${blue},0.10)`;
+            });
+            // font color per row = spectrum color
+            const rowFontColors = lastAnalysisResults.map(r => r.color);
+            traces.push({
+                type: 'table',
+                header: {
+                    values: headers.map(h => `<b>${h}</b>`),
+                    fill: { color: tableHeaderBg },
+                    font: { color: tableFontColor, size: 11, family: 'Segoe UI' },
+                    align: 'center', height: 26
+                },
+                cells: {
+                    values: cellValues,
+                    fill: { color: cellValues.map(() => rowBgColors) },
+                    font: { color: cellValues.map(() => rowFontColors), size: 10, family: 'Consolas' },
+                    align: ['left', 'center', 'center', 'center', 'center', 'center', 'center', 'center', 'center'],
+                    height: 22
+                },
+                domain: { x: [0.0, 1.0], y: [0.0, 0.35] }
+            });
+        } else {
+            layout.xaxis = {
+                title: { text: '2θ (°)', font: { size: 13 } }, tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero,
+                range: thetaMin && thetaMax ? [parseFloat(thetaMin), parseFloat(thetaMax)] : undefined,
+                dtick: 5
+            };
+            layout.yaxis = {
+                title: { text: yTitle, font: { size: 13 } }, tickfont: { size: 11 },
+                gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero,
+                type: yAxisType, rangemode: yAxisType === 'log' ? undefined : 'tozero'
+            };
+            layout.margin = { l: 60, r: 20, t: 40, b: 50 };
+        }
+
+        scaleLayoutFonts(layout, 2.5);
+        if (layout.margin) {
+            layout.margin.l = Math.round((layout.margin.l || 60) * 1.6);
+            layout.margin.b = Math.round((layout.margin.b || 50) * 1.6);
+            layout.margin.t = Math.round((layout.margin.t || 40) * 1.4);
+        }
+
+        const imgHeight = panelVisible ? 1300 : 900;
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px';
+        document.body.appendChild(tempDiv);
+        Plotly.newPlot(tempDiv, traces, layout).then(() => {
+            Plotly.downloadImage(tempDiv, { format, width: 1600, height: imgHeight, scale: 2, filename: 'xrd_pattern' }).then(() => {
+                Plotly.purge(tempDiv); tempDiv.remove();
+            });
+        });
+    }
+
+    function exportPNG() { exportImage('png'); }
+    function exportSVG() { exportImage('svg'); }
+
+    function exportCSV() {
+        if (datasets.length === 0) return;
+        let csv = '2Theta';
+        const visible = datasets.filter(d => d.visible);
+        visible.forEach(ds => { csv += ',' + ds.label; });
+        csv += '\n';
+
+        // Use first dataset's 2theta as reference
+        const ref = visible[0];
+        for (let i = 0; i < ref.twoTheta.length; i++) {
+            csv += ref.twoTheta[i].toFixed(4);
+            visible.forEach(ds => {
+                // Find closest point
+                const targetTheta = ref.twoTheta[i];
+                let closest = 0;
+                let minDiff = Infinity;
+                for (let j = 0; j < ds.twoTheta.length; j++) {
+                    const diff = Math.abs(ds.twoTheta[j] - targetTheta);
+                    if (diff < minDiff) { minDiff = diff; closest = j; }
+                }
+                csv += ',' + ds.intensities[closest];
+            });
+            csv += '\n';
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'xrd_data.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    // ---- Analyse cristallographique ----
+    let lastAnalysisResults = [];
+
+    function runAnalysis() {
+        const lambdaMode = document.getElementById('lambdaMode').value;
+        const lambda = lambdaMode === 'weighted'
+            ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
+            : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
+        const peakThreshold = parseFloat(document.getElementById('peakThreshold').value) || 3;
+        const peakDistance = parseInt(document.getElementById('peakDistance').value) || 10;
+        const corrSinTheta = document.getElementById('corrSinTheta').checked;
+        const visible = datasets.filter(d => d.visible);
+        if (visible.length === 0) return;
+
+        lastAnalysisResults = [];
+
+        visible.forEach((ds, dsIdx) => {
+            const { x, y } = applyTransform(ds, dsIdx);
+
+            // Apply sinθ correction if requested (fixed divergence slit)
+            let yCorrected = y;
+            if (corrSinTheta) {
+                yCorrected = y.map((val, i) => val * Math.sin(x[i] / 2 * Math.PI / 180));
+            }
+
+            const peaks = detectPeaks(x, yCorrected, peakThreshold, peakDistance);
+
+            // Step size for Δd calculation
+            const stepDeg = ds.metadata?.stepSize || (x.length > 1 ? (x[x.length - 1] - x[0]) / (x.length - 1) : 0.033);
+            const halfStepRad = (stepDeg / 2) * Math.PI / 180;
+
+            peaks.forEach(p => {
+                const thetaRad = (p.x / 2) * Math.PI / 180;
+                const d = lambda / (2 * Math.sin(thetaRad));
+                // Uncertainty: Δd/d = Δθ/tanθ
+                const deltaD = d * halfStepRad / Math.tan(thetaRad);
+                const betaMeas = p.fwhm * Math.PI / 180;
+                const betaInstrRad = getInstrBeta_rad(p.x);  // polynôme dépendant de 2θ
+                const betaCorr = Math.sqrt(Math.max(betaMeas * betaMeas - betaInstrRad * betaInstrRad, 1e-12));
+                const D_nm = (K * lambda) / (betaCorr * Math.cos(thetaRad)) / 10;
+                const betaCosTheta = betaCorr * Math.cos(thetaRad);
+                const fourSinTheta = 4 * Math.sin(thetaRad);
+                // Size-Strain Plot: Y=(d·β·cosθ)², X=d²·β·cosθ  (d en Å)
+                const xSSP = d * d * betaCosTheta;       // Å²
+                const ySSP = (d * betaCosTheta) ** 2;    // Å²
+                const halfWidth = Math.max(1, Math.round(p.fwhm / (x[1] - x[0]) * 2));
+                let area = 0;
+                for (let j = Math.max(0, p.idx - halfWidth); j < Math.min(x.length - 1, p.idx + halfWidth); j++) {
+                    area += (yCorrected[j] + yCorrected[j + 1]) / 2 * (x[j + 1] - x[j]);
+                }
+
+                lastAnalysisResults.push({
+                    spectrum: ds.label, color: ds.color,
+                    twoTheta: p.x, intensity: p.y, d, deltaD, fwhm: p.fwhm,
+                    fwhmCorr: betaCorr * 180 / Math.PI,
+                    D_nm, betaCosTheta, fourSinTheta, xSSP, ySSP, area
+                });
+            });
+        });
+
+        // Per-spectrum Williamson-Hall + crystallinity
+        const perSpectrumStats = [];
+        visible.forEach((ds, dsIdx) => {
+            const specResults = lastAnalysisResults.filter(r => r.spectrum === ds.label);
+            if (specResults.length === 0) return;
+
+            // Williamson-Hall linear regression: β·cosθ = Kλ/D + 4ε·sinθ
+            let whResult = null;
+            if (specResults.length >= 2) {
+                const xs = specResults.map(r => r.fourSinTheta);
+                const ys = specResults.map(r => r.betaCosTheta);
+                const n = xs.length;
+                const sumX = xs.reduce((a, b) => a + b, 0);
+                const sumY = ys.reduce((a, b) => a + b, 0);
+                const sumXY = xs.reduce((a, b, i) => a + b * ys[i], 0);
+                const sumX2 = xs.reduce((a, b) => a + b * b, 0);
+                const denom = n * sumX2 - sumX * sumX;
+                if (Math.abs(denom) > 1e-20) {
+                    const slope = (n * sumXY - sumX * sumY) / denom;
+                    const intercept = (sumY - slope * sumX) / n;
+                    const meanY = sumY / n;
+                    const ssTot = ys.reduce((a, b) => a + (b - meanY) ** 2, 0);
+                    const ssRes = ys.reduce((a, b, i) => a + (b - (intercept + slope * xs[i])) ** 2, 0);
+                    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+                    const D_wh = intercept > 0 ? (K * lambda / intercept) / 10 : null;
+                    whResult = { D_wh, strain: slope, r2 };
+                }
+            }
+
+            // SSP regression: (d·β·cosθ)² = (Kλ/D)·(d²·β·cosθ) + (ελ)²
+            // → slope = Kλ/D → D = Kλ/slope ; intercept = (ελ)² → ε = √intercept / λ
+            let sspResult = null;
+            if (specResults.length >= 2) {
+                const xsS = specResults.map(r => r.xSSP);
+                const ysS = specResults.map(r => r.ySSP);
+                const nS = xsS.length;
+                const sX = xsS.reduce((a, b) => a + b, 0);
+                const sY = ysS.reduce((a, b) => a + b, 0);
+                const sXY = xsS.reduce((a, b, i) => a + b * ysS[i], 0);
+                const sX2 = xsS.reduce((a, b) => a + b * b, 0);
+                const dS = nS * sX2 - sX * sX;
+                if (Math.abs(dS) > 1e-40) {
+                    const slopeS = (nS * sXY - sX * sY) / dS;
+                    const interceptS = (sY - slopeS * sX) / nS;
+                    const mYs = sY / nS;
+                    const ssTotS = ysS.reduce((a, b) => a + (b - mYs) ** 2, 0);
+                    const ssResS = ysS.reduce((a, b, i) => a + (b - (interceptS + slopeS * xsS[i])) ** 2, 0);
+                    const r2S = ssTotS > 0 ? 1 - ssResS / ssTotS : 0;
+                    const D_ssp = slopeS > 0 ? (K * lambda / slopeS) / 10 : null;  // nm
+                    const epsilon_ssp = Math.sqrt(Math.max(0, interceptS)) / lambda;  // sans unité
+                    sspResult = { D_ssp, epsilon_ssp, r2: r2S };
+                }
+            }
+
+            // Crystallinity per spectrum
+            let crystallinity = null;
+            const { x, y } = applyTransform(ds, dsIdx);
+            const corrSinTheta = document.getElementById('corrSinTheta').checked;
+            const yc = corrSinTheta ? y.map((v, i) => v * Math.sin(x[i] / 2 * Math.PI / 180)) : y;
+            let totalArea = 0;
+            for (let i = 0; i < x.length - 1; i++) {
+                totalArea += (yc[i] + yc[i + 1]) / 2 * (x[i + 1] - x[i]);
+            }
+            const peakAreaSum = specResults.reduce((a, b) => a + b.area, 0);
+            if (totalArea > 0) crystallinity = peakAreaSum / totalArea * 100;
+
+            // Average Scherrer D
+            const avgD = specResults.reduce((a, b) => a + b.D_nm, 0) / specResults.length;
+
+            perSpectrumStats.push({ label: ds.label, color: ds.color, whResult, sspResult, crystallinity, avgD, nPeaks: specResults.length });
+        });
+
+        // Render results
+        renderAnalysisPanel(perSpectrumStats);
+    }
+
+    function renderAnalysisPanel(perSpectrumStats) {
+        const panel = document.getElementById('analysisPanel');
+        panel.classList.add('visible');
+
+        // Per-spectrum summary lines
+        let summaryHtml = '';
+        for (const s of perSpectrumStats) {
+            summaryHtml += `<div style="margin-bottom:4px;border-left:3px solid ${s.color};padding-left:8px;">`;
+            summaryHtml += `<b style="color:${s.color}">${s.label}</b> &nbsp; (${s.nPeaks} pic${s.nPeaks > 1 ? 's' : ''})`;
+            summaryHtml += ` &nbsp; D̄<sub>Scherrer</sub> = <span class="val">${s.avgD.toFixed(1)} nm</span>`;
+            if (s.whResult) {
+                if (s.whResult.D_wh !== null) summaryHtml += ` &nbsp; D<sub>W-H</sub> = <span class="val">${s.whResult.D_wh.toFixed(1)} nm</span>`;
+                summaryHtml += ` &nbsp; ε<sub>W-H</sub> = <span class="val">${(s.whResult.strain * 100).toFixed(3)}%</span>`;
+                summaryHtml += ` &nbsp; R²<sub>W-H</sub> = <span class="${s.whResult.r2 > 0.8 ? 'val' : 'err'}">${s.whResult.r2.toFixed(3)}</span>`;
+            }
+            if (s.sspResult) {
+                if (s.sspResult.D_ssp !== null) summaryHtml += ` &nbsp; D<sub>SSP</sub> = <span class="val">${s.sspResult.D_ssp.toFixed(1)} nm</span>`;
+                summaryHtml += ` &nbsp; ε<sub>SSP</sub> = <span class="val">${(s.sspResult.epsilon_ssp * 100).toFixed(3)}%</span>`;
+                summaryHtml += ` &nbsp; R²<sub>SSP</sub> = <span class="${s.sspResult.r2 > 0.8 ? 'val' : 'err'}">${s.sspResult.r2.toFixed(3)}</span>`;
+            }
+            if (s.crystallinity !== null) {
+                summaryHtml += ` &nbsp; Cristallinité ≈ <span class="val">${s.crystallinity.toFixed(1)}%</span>`;
+            }
+            summaryHtml += `</div>`;
+        }
+        document.getElementById('whSummary').innerHTML = summaryHtml;
+
+        // Peaks table
+        let html = '<table class="peaks-table"><tr>' +
+            '<th>Spectre</th><th>2θ (°)</th><th>d (Å)</th><th>Δd (Å)</th><th>FWHM (°)</th>' +
+            '<th>FWHM corr. (°)</th><th>D Scherrer (nm)</th><th>Intensité</th><th>Aire</th>' +
+            '</tr>';
+        for (const r of lastAnalysisResults) {
+            html += `<tr>
+                <td style="color:${r.color}">${r.spectrum}</td>
+                <td>${r.twoTheta.toFixed(3)}</td>
+                <td>${r.d.toFixed(4)}</td>
+                <td>±${r.deltaD.toFixed(4)}</td>
+                <td>${r.fwhm.toFixed(3)}</td>
+                <td>${r.fwhmCorr.toFixed(3)}</td>
+                <td>${r.D_nm.toFixed(1)}</td>
+                <td>${r.intensity.toFixed(0)}</td>
+                <td>${r.area.toFixed(0)}</td>
+            </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('peaksTableContainer').innerHTML = html;
+    }
+
+    function exportPeaksCSV() {
+        if (lastAnalysisResults.length === 0) {
+            runAnalysis();
+            if (lastAnalysisResults.length === 0) return;
+        }
+        let csv = 'Spectre,2Theta_deg,d_A,delta_d_A,FWHM_deg,FWHM_corr_deg,D_Scherrer_nm,Intensite,Aire,betaCosTheta,4sinTheta,xSSP_A2,ySSP_A2\n';
+        for (const r of lastAnalysisResults) {
+            csv += `${r.spectrum},${r.twoTheta.toFixed(4)},${r.d.toFixed(4)},${r.deltaD.toFixed(4)},${r.fwhm.toFixed(4)},` +
+                   `${r.fwhmCorr.toFixed(4)},${r.D_nm.toFixed(2)},${r.intensity.toFixed(1)},` +
+                   `${r.area.toFixed(1)},${r.betaCosTheta.toFixed(6)},${r.fourSinTheta.toFixed(6)},${r.xSSP.toFixed(8)},${r.ySSP.toFixed(10)}\n`;
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'xrd_peaks_analysis.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    function exportPeaksXLSX() {
+        if (lastAnalysisResults.length === 0) {
+            runAnalysis();
+            if (lastAnalysisResults.length === 0) return;
+        }
+        const headers = ['Spectre', '2θ (°)', 'd (Å)', 'Δd (Å)', 'FWHM (°)', 'FWHM corr. (°)', 'D Scherrer (nm)', 'Intensité', 'Aire', 'β·cosθ', '4·sinθ', 'x_SSP (Å²)', 'y_SSP (Å²)'];
+        const rows = lastAnalysisResults.map(r => [
+            r.spectrum, r.twoTheta, r.d, r.deltaD, r.fwhm, r.fwhmCorr, r.D_nm, r.intensity, r.area, r.betaCosTheta, r.fourSinTheta, r.xSSP, r.ySSP
+        ]);
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        // Column widths
+        ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 20 : 14 }));
+        // Number formats for data columns
+        const fmt = ['@', '0.000', '0.0000', '0.0000', '0.000', '0.000', '0.0', '0', '0', '0.000000', '0.000000', '0.00000000', '0.0000000000'];
+        for (let r = 1; r <= rows.length; r++) {
+            for (let c = 1; c < headers.length; c++) {
+                const cell = ws[XLSX.utils.encode_cell({ r, c })];
+                if (cell) cell.z = fmt[c];
+            }
+        }
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Analyse XRD');
+        XLSX.writeFile(wb, 'xrd_peaks_analysis.xlsx');
+    }
+
+    // ---- Drag & Drop ----
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // Also allow drop anywhere on page
+    document.body.addEventListener('dragover', (e) => e.preventDefault());
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        handleFiles(e.dataTransfer.files);
+    });
+
+    // Mutual exclusion for normalize options
+    document.getElementById('normalizeCheck').addEventListener('change', function() {
+        if (this.checked) document.getElementById('normAreaCheck').checked = false;
+    });
+    document.getElementById('normAreaCheck').addEventListener('change', function() {
+        if (this.checked) document.getElementById('normalizeCheck').checked = false;
+    });
+
+    // Init empty plot
+    updatePlot();
+
+    // ---- β instrumental polynomial ----
+    function toggleInstrManual() {
+        const mode = document.getElementById('instrMode').value;
+        document.getElementById('instrManualRow').style.display = mode === 'manual' ? 'flex' : 'none';
+        const info = document.getElementById('instrPolyInfo');
+        if (mode === 'without_mono') {
+            info.style.display = '';
+            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵, B₃=−6.44×10⁻⁸';
+        } else if (mode === 'with_mono') {
+            info.style.display = '';
+            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>A=0.04933, B₁=1.27×10⁻⁴, B₂=−1.91×10⁻⁶, B₃=−6.44×10⁻⁸';
+        } else {
+            info.style.display = 'none';
+        }
+    }
+
+    // Returns β_instrumental in radians for a given 2θ in degrees
+    function getInstrBeta_rad(twoThetaDeg) {
+        const mode = document.getElementById('instrMode').value;
+        let betaDeg;
+        const B3 = -6.43532e-8;  // terme cubique PANalytical X'Pert MPD 1
+        if (mode === 'without_mono') {
+            // PANalytical X'Pert MPD 1 sans monochromateur
+            const A = 0.07748, B1 = -0.00123, B2 = 1.86685e-05;
+            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg ** 2 + B3 * twoThetaDeg ** 3;
+        } else if (mode === 'with_mono') {
+            // PANalytical X'Pert MPD 1 avec monochromateur
+            const A = 0.04933, B1 = 0.000126832, B2 = -1.90653e-06;
+            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg ** 2 + B3 * twoThetaDeg ** 3;
+        } else {
+            betaDeg = parseFloat(document.getElementById('instrBroadening').value) || 0;
+        }
+        return Math.max(0, betaDeg) * Math.PI / 180;
+    }
+
+    // ---- Williamson-Hall interactive plot ----
+    function showWHPlot() {
+        if (lastAnalysisResults.length === 0) {
+            runAnalysis();
+            if (lastAnalysisResults.length === 0) return;
+        }
+
+        const lambdaMode = document.getElementById('lambdaMode').value;
+        const lambdaA = lambdaMode === 'weighted'
+            ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
+            : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
+
+        const spectra = [...new Set(lastAnalysisResults.map(r => r.spectrum))];
+        const traces = [];
+        const annotations = [];
+
+        for (const spectrum of spectra) {
+            const pts = lastAnalysisResults.filter(r => r.spectrum === spectrum);
+            const color = pts[0].color;
+
+            // Data points
+            traces.push({
+                x: pts.map(r => r.fourSinTheta),
+                y: pts.map(r => r.betaCosTheta),
+                mode: 'markers+text',
+                type: 'scatter',
+                name: spectrum,
+                marker: { color, size: 9, line: { color: '#fff', width: 1 } },
+                text: pts.map(r => r.twoTheta.toFixed(2) + '°'),
+                textposition: 'top center',
+                textfont: { color, size: 9 },
+                customdata: pts.map(r => [r.twoTheta, r.fwhm, r.fwhmCorr, r.D_nm]),
+                hovertemplate: '2θ=%{customdata[0]:.3f}°<br>FWHM corr=%{customdata[2]:.4f}°<br>D=%{customdata[3]:.1f} nm<br>4sinθ=%{x:.5f}<br>β·cosθ=%{y:.5f}<extra>' + spectrum + '</extra>'
+            });
+
+            // Linear regression
+            if (pts.length >= 2) {
+                const xs = pts.map(r => r.fourSinTheta);
+                const ys = pts.map(r => r.betaCosTheta);
+                const n = xs.length;
+                const sumX = xs.reduce((a, b) => a + b, 0);
+                const sumY = ys.reduce((a, b) => a + b, 0);
+                const sumXY = xs.reduce((a, b, i) => a + b * ys[i], 0);
+                const sumX2 = xs.reduce((a, b) => a + b * b, 0);
+                const denom = n * sumX2 - sumX * sumX;
+                if (Math.abs(denom) > 1e-20) {
+                    const slope = (n * sumXY - sumX * sumY) / denom;
+                    const intercept = (sumY - slope * sumX) / n;
+                    const meanY = sumY / n;
+                    const ssTot = ys.reduce((a, b) => a + (b - meanY) ** 2, 0);
+                    const ssRes = ys.reduce((a, b, i) => a + (b - (intercept + slope * xs[i])) ** 2, 0);
+                    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+                    const D_wh_nm = intercept > 0 ? (K * lambdaA) / (intercept * 10) : null;
+                    const strain_pct = slope * 100;
+
+                    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                    const pad = (xMax - xMin) * 0.15 || 0.01;
+                    const xFit = [xMin - pad, xMax + pad];
+                    const yFit = xFit.map(x => intercept + slope * x);
+
+                    traces.push({
+                        x: xFit, y: yFit,
+                        mode: 'lines', type: 'scatter',
+                        name: spectrum + ' (régression)',
+                        line: { color, width: 2, dash: 'dash' },
+                        showlegend: true,
+                        hovertemplate: 'Régression<br>y=%{y:.5f}<extra>' + spectrum + '</extra>'
+                    });
+
+                    // Annotation box with results
+                    const xMid = (xMin + xMax) / 2;
+                    const yMid = intercept + slope * xMid;
+                    const labelLines = [
+                        D_wh_nm !== null ? `D<sub>W-H</sub> = ${D_wh_nm.toFixed(1)} nm` : 'D: intercept ≤ 0',
+                        `ε = ${strain_pct >= 0 ? '+' : ''}${strain_pct.toFixed(4)}%`,
+                        `R² = ${r2.toFixed(4)}`
+                    ];
+                    annotations.push({
+                        x: xMid, y: yMid,
+                        text: labelLines.join('<br>'),
+                        showarrow: true, arrowhead: 2, arrowsize: 0.8,
+                        arrowcolor: color, ax: 40, ay: -50,
+                        font: { size: 10, color },
+                        bgcolor: 'rgba(22,33,62,0.92)',
+                        bordercolor: color, borderwidth: 1, borderpad: 4,
+                        xref: 'x', yref: 'y'
+                    });
+                }
+            }
+        }
+
+        const layout = {
+            paper_bgcolor: '#1a1a2e', plot_bgcolor: '#1a1a2e',
+            font: { color: '#e0e0e0', family: 'Segoe UI', size: 11 },
+            title: { text: 'Williamson-Hall :  β·cosθ = Kλ/D  +  4ε·sinθ', font: { size: 13, color: '#e94560' } },
+            xaxis: {
+                title: { text: '4·sinθ', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            yaxis: {
+                title: { text: 'β<sub>corr</sub>·cosθ (rad)', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            legend: { bgcolor: 'rgba(22,33,62,0.9)', bordercolor: '#0f3460', borderwidth: 1, font: { size: 10 } },
+            annotations,
+            margin: { l: 65, r: 20, t: 50, b: 55 },
+            hovermode: 'closest'
+        };
+
+        const modal = document.getElementById('whModal');
+        modal.style.display = 'flex';
+        Plotly.react('whPlotDiv', traces, layout, { responsive: true, displaylogo: false });
+    }
+
+    // ---- Size-Strain Plot ----
+    function showSSPPlot() {
+        if (lastAnalysisResults.length === 0) {
+            runAnalysis();
+            if (lastAnalysisResults.length === 0) return;
+        }
+
+        const lambdaMode = document.getElementById('lambdaMode').value;
+        const lambdaA = lambdaMode === 'weighted'
+            ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
+            : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
+
+        const spectra = [...new Set(lastAnalysisResults.map(r => r.spectrum))];
+        const traces = [];
+        const annotations = [];
+
+        for (const spectrum of spectra) {
+            const pts = lastAnalysisResults.filter(r => r.spectrum === spectrum);
+            const color = pts[0].color;
+
+            traces.push({
+                x: pts.map(r => r.xSSP),
+                y: pts.map(r => r.ySSP),
+                mode: 'markers+text',
+                type: 'scatter',
+                name: spectrum,
+                marker: { color, size: 9, line: { color: '#fff', width: 1 } },
+                text: pts.map(r => r.twoTheta.toFixed(2) + '°'),
+                textposition: 'top center',
+                textfont: { color, size: 9 },
+                customdata: pts.map(r => [r.twoTheta, r.d, r.fwhmCorr, r.D_nm]),
+                hovertemplate: '2θ=%{customdata[0]:.3f}°<br>d=%{customdata[1]:.4f} Å<br>FWHM corr=%{customdata[2]:.4f}°<br>D=%{customdata[3]:.1f} nm<br>x=%{x:.6e} Å²<br>y=%{y:.6e} Å²<extra>' + spectrum + '</extra>'
+            });
+
+            if (pts.length >= 2) {
+                const xs = pts.map(r => r.xSSP);
+                const ys = pts.map(r => r.ySSP);
+                const n = xs.length;
+                const sumX = xs.reduce((a, b) => a + b, 0);
+                const sumY = ys.reduce((a, b) => a + b, 0);
+                const sumXY = xs.reduce((a, b, i) => a + b * ys[i], 0);
+                const sumX2 = xs.reduce((a, b) => a + b * b, 0);
+                const denom = n * sumX2 - sumX * sumX;
+                if (Math.abs(denom) > 1e-40) {
+                    const slope = (n * sumXY - sumX * sumY) / denom;
+                    const intercept = (sumY - slope * sumX) / n;
+                    const meanY = sumY / n;
+                    const ssTot = ys.reduce((a, b) => a + (b - meanY) ** 2, 0);
+                    const ssRes = ys.reduce((a, b, i) => a + (b - (intercept + slope * xs[i])) ** 2, 0);
+                    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+                    const D_ssp_nm = slope > 0 ? (K * lambdaA / slope) / 10 : null;
+                    const epsilon_ssp = Math.sqrt(Math.max(0, intercept)) / lambdaA;
+                    const strain_pct = epsilon_ssp * 100;
+
+                    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                    const pad = (xMax - xMin) * 0.15 || 1e-5;
+                    const xFit = [Math.max(0, xMin - pad), xMax + pad];
+                    const yFit = xFit.map(xv => intercept + slope * xv);
+
+                    traces.push({
+                        x: xFit, y: yFit,
+                        mode: 'lines', type: 'scatter',
+                        name: spectrum + ' (régression)',
+                        line: { color, width: 2, dash: 'dash' },
+                        showlegend: true,
+                        hovertemplate: 'Régression SSP<br>y=%{y:.6e}<extra>' + spectrum + '</extra>'
+                    });
+
+                    const xMid = (xMin + xMax) / 2;
+                    const yMid = intercept + slope * xMid;
+                    const labelLines = [
+                        D_ssp_nm !== null ? `D<sub>SSP</sub> = ${D_ssp_nm.toFixed(1)} nm` : 'D : pente ≤ 0',
+                        `ε<sub>SSP</sub> = ${strain_pct >= 0 ? '+' : ''}${strain_pct.toFixed(4)}%`,
+                        `R² = ${r2.toFixed(4)}`
+                    ];
+                    annotations.push({
+                        x: xMid, y: yMid,
+                        text: labelLines.join('<br>'),
+                        showarrow: true, arrowhead: 2, arrowsize: 0.8,
+                        arrowcolor: color, ax: 40, ay: -50,
+                        font: { size: 10, color },
+                        bgcolor: 'rgba(22,33,62,0.92)',
+                        bordercolor: color, borderwidth: 1, borderpad: 4,
+                        xref: 'x', yref: 'y'
+                    });
+                }
+            }
+        }
+
+        const layout = {
+            paper_bgcolor: '#1a1a2e', plot_bgcolor: '#1a1a2e',
+            font: { color: '#e0e0e0', family: 'Segoe UI', size: 11 },
+            title: { text: 'Size-Strain Plot :  (d·β·cosθ)² = (Kλ/D)·(d²·β·cosθ) + (ελ)²', font: { size: 13, color: '#e94560' } },
+            xaxis: {
+                title: { text: 'd²·β<sub>corr</sub>·cosθ (Å²)', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            yaxis: {
+                title: { text: '(d·β<sub>corr</sub>·cosθ)² (Å²)', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            legend: { bgcolor: 'rgba(22,33,62,0.9)', bordercolor: '#0f3460', borderwidth: 1, font: { size: 10 } },
+            annotations,
+            margin: { l: 75, r: 20, t: 50, b: 65 },
+            hovermode: 'closest'
+        };
+
+        document.getElementById('sspModal').style.display = 'flex';
+        Plotly.react('sspPlotDiv', traces, layout, { responsive: true, displaylogo: false });
+    }
+    </script>
+
+    <!-- Modal Size-Strain Plot -->
+    <div id="sspModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+        <div style="background:#16213e; border:2px solid #0f3460; border-radius:10px; width:82%; max-width:1000px; height:72vh; display:flex; flex-direction:column; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-shrink:0;">
+                <h3 style="color:#4ecca3; font-size:0.88em; text-transform:uppercase; letter-spacing:1px; margin:0;">Size-Strain Plot</h3>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span style="font-size:0.75em; color:#888;">pente → D (Scherrer), ordonnée → ε (ε = √intercept / λ)</span>
+                    <button onclick="document.getElementById('sspModal').style.display='none'" style="background:none;border:none;color:#888;cursor:pointer;font-size:1.3em;padding:0 4px;" title="Fermer">✕</button>
+                </div>
+            </div>
+            <div id="sspPlotDiv" style="flex:1; min-height:0;"></div>
+        </div>
+    </div>
+
+    <!-- Modal Williamson-Hall -->
+    <div id="whModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+        <div style="background:#16213e; border:2px solid #0f3460; border-radius:10px; width:82%; max-width:1000px; height:72vh; display:flex; flex-direction:column; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-shrink:0;">
+                <h3 style="color:#e94560; font-size:0.88em; text-transform:uppercase; letter-spacing:1px; margin:0;">Graphe de Williamson-Hall</h3>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span style="font-size:0.75em; color:#888;">β corrigé par polynôme instrumental</span>
+                    <button onclick="document.getElementById('whModal').style.display='none'" style="background:none;border:none;color:#888;cursor:pointer;font-size:1.3em;padding:0 4px;" title="Fermer">✕</button>
+                </div>
+            </div>
+            <div id="whPlotDiv" style="flex:1; min-height:0;"></div>
+        </div>
+    </div>
+</body>
+</html>
