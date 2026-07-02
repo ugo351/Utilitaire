@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UV-Vis / Plate Reader Viewer</title>
     <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -214,6 +215,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('uvvis')">🔬 UV-Vis</button>
         <button class="tab-btn" onclick="switchTab('plate')">🧫 Plate Reader</button>
+        <button class="tab-btn" onclick="switchTab('ec')">📊 ε Beer-Lambert</button>
     </div>
 
     <!-- =========================================================
@@ -498,6 +500,85 @@
         </div>
     </div>
 
+    <!-- =========================================================
+         ε BEER-LAMBERT TAB
+         ========================================================= -->
+    <div class="tab-content" id="tab-ec">
+        <div class="main-container">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>Données (Simple Reads)</h3>
+                    <div class="drop-zone" id="ecDropZone">
+                        <div class="icon">📋</div>
+                        <div>Glisser-déposer des fichiers PDF ou .txt</div>
+                        <p>Plusieurs fichiers simultanés supportés</p>
+                    </div>
+                    <input type="file" id="ecFileInput" accept=".txt,.csv,.pdf" multiple>
+                    <div class="file-list" id="ecFileList" style="margin-top:8px;"></div>
+                    <button class="btn" style="margin-top:6px; width:100%; font-size:0.92em;" onclick="ecDatasets=[]; ecRenderFileList(); ecCompute();">Tout supprimer</button>
+                    <button class="btn" style="margin-top:4px; width:100%; font-size:0.92em;" onclick="var r=document.getElementById('ecPasteRow'); r.style.display=r.style.display==='none'?'block':'none';">✏️ Coller / saisie manuelle</button>
+                    <div id="ecPasteRow" style="display:none; margin-top:6px;">
+                        <textarea id="ecPasteArea" placeholder="Collez ici le texte du rapport Simple Reads&#10;&#10;Exemple:&#10;Zero (0.0695) 355.0&#10;1 0.0234 355.0&#10;2 0.0233 355.0&#10;..." style="width:100%; height:110px; background:#0f1729; color:#e0e0e0; border:1px solid #0f3460; border-radius:4px; padding:6px; font-size:0.82em; font-family:monospace; resize:vertical;"></textarea>
+                        <div style="display:flex; gap:4px; margin-top:4px;">
+                            <input type="text" id="ecPasteName" placeholder="Nom (optionnel)" style="flex:1;">
+                            <button class="btn" onclick="ecAddFromPaste()">Ajouter</button>
+                        </div>
+                    </div>
+                    <div id="ecFileStatus" style="font-size:0.85em; margin-top:4px; color:#888;"></div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Options globales</h3>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="ecSubtractZero" onchange="ecCompute()">
+                        Soustraire le "Zero" (blanc instrument)
+                    </label>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Titre</h3>
+                    <input type="text" id="ecTitle" placeholder="Droite de Beer-Lambert" style="width:100%;" oninput="ecUpdatePlot()">
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Affichage</h3>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="ecGrid" checked onchange="ecUpdatePlot()">
+                        Grille
+                    </label>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Résultats</h3>
+                    <div id="ecResultsPanel" style="font-size:0.92em; color:#888;">Chargez un fichier pour commencer.</div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Export</h3>
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label>Fond :</label>
+                            <select id="ecExportBg" style="flex:1;">
+                                <option value="dark">Sombre (écran)</option>
+                                <option value="white">Blanc (impression)</option>
+                                <option value="transparent">Transparent</option>
+                            </select>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn" onclick="ecExportImage('png')">PNG</button>
+                            <button class="btn" onclick="ecExportImage('svg')">SVG</button>
+                            <button class="btn" onclick="ecExportCSV()">CSV</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="plot-container">
+                <div id="ecPlot" style="width:100%;height:100%;"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="info-bar">
         <div id="infoText">Prêt. Glissez-déposez des fichiers pour commencer.</div>
         <div>Curseur: <span id="cursorPos">-</span></div>
@@ -520,7 +601,8 @@
         event.target.classList.add('active');
         requestAnimationFrame(() => {
             if (tab === 'uvvis') { Plotly.Plots.resize('uvPlot'); uvUpdatePlot(); }
-            else { Plotly.Plots.resize('prPlot'); prUpdatePlot(); }
+            else if (tab === 'plate') { Plotly.Plots.resize('prPlot'); prUpdatePlot(); }
+            else if (tab === 'ec') { Plotly.Plots.resize('ecPlot'); ecUpdatePlot(); }
         });
     }
 
@@ -1457,6 +1539,436 @@
         fi.addEventListener('change', e => { if (e.target.files[0]) prLoadFile(e.target.files[0]); });
     })();
 
+    // ============================================================
+    // ε BEER-LAMBERT TAB
+    // ============================================================
+    let ecData = null;
+    let ecResults = null;
+    let ecDatasets = []; // [{label, color, visible, parsedData, result}]
+    let ecDragSrcIdx = null;
+
+    function ecParseReport(text) {
+        const BLANK_THRESH = 0.005; // |abs| < seuil => mesure de vérification du blanc, ignorée
+        const lines = text.split(/\r?\n/);
+        const reads = [];
+        let wavelength = null;
+        let zeroAbs = null;
+
+        for (const line of lines) {
+            const stripped = line.trim();
+            // Match "Zero (0.0695) 355.0" or "Zero 0.0695 355.0" — valeur peut être négative
+            let m = stripped.match(/^Zero\s+\(?([-\d.]+)\)?\s+([\d.]+)/i);
+            if (m) {
+                zeroAbs = parseFloat(m[1]);
+                wavelength = parseFloat(m[2]);
+                continue;
+            }
+            // Match "1 0.0234 355.0" or "1 -0.0003 355.0" — abs peut être négatif
+            m = stripped.match(/^(\d+)\s+([-\d.]+)\s+([\d.]+)$/);
+            if (m) {
+                const abs = parseFloat(m[2]);
+                if (!wavelength) wavelength = parseFloat(m[3]);
+                // Ignorer les mesures de vérification du blanc (très proches de zéro)
+                if (Math.abs(abs) >= BLANK_THRESH) reads.push(abs);
+            }
+        }
+
+        if (reads.length === 0) return null;
+        // Trier par valeur croissante : la plus faible abs = la plus faible concentration
+        reads.sort((a, b) => a - b);
+        return { sortedReads: reads, wavelength, zeroAbs };
+    }
+
+    function ecGetConcentrationsFor(ds) {
+        if (ds.range === 'low')  return [1, 2.5, 5, 7.5, 10];
+        if (ds.range === 'high') return [10, 25, 50, 75, 100];
+        return (ds.customConc || '').split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v) && v > 0);
+    }
+
+    // -------------------------------------------------------
+    // ε Beer-Lambert — functions
+    // -------------------------------------------------------
+    function ecRenderFileList() {
+        const container = document.getElementById('ecFileList');
+        container.innerHTML = '';
+        ecDatasets.forEach((ds, idx) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'background:rgba(15,52,96,0.25); border-radius:6px; margin-bottom:5px; overflow:hidden;';
+            wrap.draggable = true;
+            wrap.dataset.idx = idx;
+            wrap.addEventListener('dragstart', e => {
+                ecDragSrcIdx = idx;
+                wrap.style.opacity = '0.5';
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            wrap.addEventListener('dragend', () => {
+                wrap.style.opacity = '';
+                container.querySelectorAll('[data-idx]').forEach(el => el.style.outline = '');
+            });
+            wrap.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                container.querySelectorAll('[data-idx]').forEach(el => el.style.outline = '');
+                if (ecDragSrcIdx !== idx) wrap.style.outline = '2px solid #4ecca3';
+            });
+            wrap.addEventListener('dragleave', () => { wrap.style.outline = ''; });
+            wrap.addEventListener('drop', e => {
+                e.preventDefault();
+                wrap.style.outline = '';
+                if (ecDragSrcIdx === null || ecDragSrcIdx === idx) return;
+                const moved = ecDatasets.splice(ecDragSrcIdx, 1)[0];
+                ecDatasets.splice(idx, 0, moved);
+                ecDragSrcIdx = null;
+                ecRenderFileList(); ecCompute();
+            });
+
+            // Header row
+            const row = document.createElement('div');
+            row.className = 'file-item';
+            row.style.background = 'none';
+            const concsLabel = ecConcLabel(ds);
+            row.innerHTML = '<div title="Déplacer" style="cursor:grab; color:#555; font-size:1.1em; padding:0 4px; user-select:none; flex-shrink:0;">&#9776;</div>'
+                + '<div class="color-dot" style="background:' + ds.color + '" title="Couleur"></div>'
+                + '<div class="file-name" title="' + ds.label + '" ondblclick="ecRename(' + idx + ')">' + ds.label + '</div>'
+                + '<span style="font-size:0.8em; color:#4ecca3; white-space:nowrap; flex-shrink:0;">' + concsLabel + '</span>'
+                + '<div class="file-actions">'
+                + '<button title="Concentrations" onclick="(function(){var p=document.getElementById(\'ecConc_' + idx + '\'); p.style.display=p.style.display===\'none\'?\'block\':\'none\';})()">'  + '\u2699\uFE0F</button>'
+                + '<button class="' + (ds.visible ? 'active' : '') + '" onclick="ecDatasets[' + idx + '].visible=!ecDatasets[' + idx + '].visible; ecRenderFileList(); ecCompute();">' + (ds.visible ? '\uD83D\uDC41' : '\uD83D\uDC41\u200D\uD83D\uDDE8') + '</button>'
+                + '<button onclick="ecDatasets.splice(' + idx + ',1); ecRenderFileList(); ecCompute();">\u2715</button>'
+                + '</div>';
+            const dot = row.querySelector('.color-dot');
+            const picker = document.createElement('input');
+            picker.type = 'color'; picker.className = 'color-picker-hidden';
+            picker.value = ds.color;
+            picker.addEventListener('input', e => { ds.color = e.target.value; dot.style.background = e.target.value; ecCompute(); });
+            row.appendChild(picker);
+            dot.addEventListener('click', () => picker.click());
+
+            // Concentration panel
+            const panel = document.createElement('div');
+            panel.id = 'ecConc_' + idx;
+            panel.style.cssText = 'display:none; padding:8px 10px 10px; border-top:1px solid #0f3460;';
+            const PRESETS = [
+                { value: 'low',  label: '1 → 10 µM',   hint: '1, 2.5, 5, 7.5, 10' },
+                { value: 'high', label: '10 → 100 µM',  hint: '10, 25, 50, 75, 100' },
+                { value: 'custom', label: 'Personnalisé', hint: '' }
+            ];
+            PRESETS.forEach(pr => {
+                const lbl = document.createElement('label');
+                lbl.className = 'checkbox-row';
+                lbl.style.cssText = 'gap:6px; margin-bottom:3px; align-items:flex-start;';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'ecRange_' + idx;
+                radio.value = pr.value;
+                radio.checked = ds.range === pr.value;
+                radio.style.cssText = 'margin-top:3px; accent-color:#8b5cf6;';
+                radio.addEventListener('change', () => {
+                    ds.range = pr.value;
+                    const cRow = panel.querySelector('.ec-custom-row');
+                    if (cRow) cRow.style.display = pr.value === 'custom' ? 'block' : 'none';
+                    ecRenderFileList(); ecCompute();
+                });
+                const span = document.createElement('span');
+                span.style.fontSize = '0.92em';
+                span.textContent = pr.label;
+                if (pr.hint) {
+                    const small = document.createElement('span');
+                    small.style.cssText = 'color:#888; font-size:0.88em; display:block;';
+                    small.textContent = pr.hint;
+                    span.appendChild(small);
+                }
+                lbl.appendChild(radio); lbl.appendChild(span);
+                panel.appendChild(lbl);
+            });
+            const customRow = document.createElement('div');
+            customRow.className = 'ec-custom-row';
+            customRow.style.display = ds.range === 'custom' ? 'block' : 'none';
+            const customInput = document.createElement('input');
+            customInput.type = 'text'; customInput.placeholder = 'ex: 1, 2.5, 5, 7.5, 10';
+            customInput.style.cssText = 'width:100%; margin-top:3px;';
+            customInput.value = ds.customConc || '';
+            customInput.addEventListener('input', () => { ds.customConc = customInput.value; ecCompute(); });
+            const customHint = document.createElement('p');
+            customHint.style.cssText = 'font-size:0.82em; color:#888; margin-top:2px;';
+            customHint.textContent = 'Valeurs en µM, séparées par des virgules';
+            customRow.appendChild(customInput); customRow.appendChild(customHint);
+            panel.appendChild(customRow);
+
+            wrap.appendChild(row); wrap.appendChild(panel);
+            container.appendChild(wrap);
+        });
+    }
+
+    function ecConcLabel(ds) {
+        if (ds.range === 'low')  return '1-10 µM';
+        if (ds.range === 'high') return '10-100 µM';
+        const v = (ds.customConc || '').trim();
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean).join(', ') + ' µM' : 'custom?';
+    }
+
+    function ecRename(idx) {
+        const name = prompt('Nouveau nom :', ecDatasets[idx].label);
+        if (name) { ecDatasets[idx].label = name; ecRenderFileList(); ecCompute(); }
+    }
+
+    function ecAddDataset(text, label) {
+        const status = document.getElementById('ecFileStatus');
+        const parsed = ecParseReport(text);
+        if (!parsed) {
+            status.textContent = '\u2717 "' + label + '" \u2014 format non reconnu';
+            status.style.color = '#e94560';
+            return false;
+        }
+        ecDatasets.push({ label, color: COLORS[ecDatasets.length % COLORS.length], visible: true, parsedData: parsed, result: null, range: 'low', customConc: '' });
+        status.textContent = '\u2713 "' + label + '" ajout\u00e9 \u2014 ' + parsed.sortedReads.length + ' mesure(s) valid\u00e9e(s) @ \u03bb = ' + parsed.wavelength + ' nm';
+        status.style.color = '#4ecca3';
+        return true;
+    }
+
+    function ecAddFromPaste() {
+        const text = document.getElementById('ecPasteArea').value.trim();
+        const name = document.getElementById('ecPasteName').value.trim() || ('Jeu de donn\u00e9es ' + (ecDatasets.length + 1));
+        if (!text) return;
+        if (ecAddDataset(text, name)) {
+            document.getElementById('ecPasteArea').value = '';
+            document.getElementById('ecPasteName').value = '';
+            ecRenderFileList(); ecCompute();
+        }
+    }
+
+    function ecExtractTextFromPDF(arrayBuffer) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        return pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise.then(async pdf => {
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                let lastY = null;
+                for (const item of content.items) {
+                    const y = item.transform ? item.transform[5] : null;
+                    if (lastY !== null && Math.abs(y - lastY) > 2) fullText += '\n';
+                    fullText += item.str;
+                    lastY = y;
+                }
+                fullText += '\n';
+            }
+            return fullText;
+        });
+    }
+
+    function ecHandleFiles(files) {
+        const status = document.getElementById('ecFileStatus');
+        let pending = files.length;
+        if (pending === 0) return;
+        status.textContent = 'Chargement de ' + pending + ' fichier(s)\u2026'; status.style.color = '#888';
+        Array.from(files).forEach(file => {
+            const label = file.name.replace(/\.[^/.]+$/, '');
+            if (file.name.match(/\.pdf$/i)) {
+                const r = new FileReader();
+                r.onload = async e => {
+                    try {
+                        const text = await ecExtractTextFromPDF(e.target.result);
+                        ecAddDataset(text, label);
+                    } catch (err) {
+                        document.getElementById('ecFileStatus').textContent = '\u2717 Erreur PDF "' + label + '" : ' + err.message;
+                        document.getElementById('ecFileStatus').style.color = '#e94560';
+                    }
+                    if (--pending === 0) { ecRenderFileList(); ecCompute(); }
+                };
+                r.readAsArrayBuffer(file);
+            } else {
+                const r = new FileReader();
+                r.onload = e => { ecAddDataset(e.target.result, label); if (--pending === 0) { ecRenderFileList(); ecCompute(); } };
+                r.readAsText(file, 'utf-8');
+            }
+        });
+    }
+
+    function ecComputeOne(ds) {
+        const concs = ecGetConcentrationsFor(ds);
+        if (concs.length === 0 || !ds.parsedData) return null;
+        const allReads = ds.parsedData.sortedReads;
+        if (!allReads || allReads.length < concs.length) return null;
+        const subtractZero = document.getElementById('ecSubtractZero').checked;
+        const N = concs.length;
+        const M = allReads.length;
+        // Distribuer M lectures en N groupes ; les lectures en excès vont aux derniers groupes
+        // (concentrations les plus élevées), car ce sont celles mesurées en premier (ordre décroissant)
+        const baseSize = Math.floor(M / N);
+        const extra = M % N; // nombre de groupes qui reçoivent une lecture supplémentaire
+        const points = [];
+        let idx = 0;
+        for (let i = 0; i < N; i++) {
+            const groupSize = (extra > 0 && i >= N - extra) ? baseSize + 1 : baseSize;
+            let absValues = allReads.slice(idx, idx + groupSize);
+            idx += groupSize;
+            if (subtractZero && ds.parsedData.zeroAbs !== null)
+                absValues = absValues.map(v => v - ds.parsedData.zeroAbs);
+            const mean = absValues.reduce((a, b) => a + b, 0) / absValues.length;
+            const sd = Math.sqrt(absValues.reduce((s, v) => s + (v - mean) ** 2, 0) / absValues.length);
+            points.push({ conc: concs[i], concM: concs[i] * 1e-6, mean, sd, absValues });
+        }
+        let sumCA = 0, sumC2 = 0;
+        for (const p of points) { sumCA += p.concM * p.mean; sumC2 += p.concM ** 2; }
+        const epsilon = sumCA / sumC2;
+        const meanA = points.reduce((s, p) => s + p.mean, 0) / points.length;
+        const ssTot = points.reduce((s, p) => s + (p.mean - meanA) ** 2, 0);
+        const ssRes = points.reduce((s, p) => s + (p.mean - epsilon * p.concM) ** 2, 0);
+        const r2 = ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 1;
+        return { epsilon, r2, points, wavelength: ds.parsedData.wavelength, zeroAbs: ds.parsedData.zeroAbs };
+    }
+
+    function ecCompute() {
+        ecDatasets.forEach(ds => { ds.result = ecComputeOne(ds); });
+        ecUpdatePlot();
+        ecRenderResults();
+    }
+
+    function ecBuildTracesAndAnnotations(bgColors) {
+        const traces = [], annotations = [];
+        const visible = ecDatasets.filter(d => d.visible && d.result);
+        if (visible.length === 0) return { traces, annotations, maxConc: 10, maxAbs: 1 };
+        const globalMaxConc = Math.max(...visible.map(d => Math.max(...d.result.points.map(p => p.conc))));
+        const globalMaxAbs  = Math.max(...visible.map(d => Math.max(...d.result.points.map(p => p.mean + p.sd))));
+        visible.forEach((ds, di) => {
+            const { epsilon, r2, points } = ds.result;
+            const lg = 'ec_' + di;
+            const indivX = [], indivY = [];
+            for (const p of points) for (const v of p.absValues) { indivX.push(p.conc); indivY.push(v); }
+            traces.push({
+                x: indivX, y: indivY, type: 'scatter', mode: 'markers',
+                name: ds.label + ' (triplicats)', legendgroup: lg, showlegend: false,
+                marker: { color: ds.color, size: 7, opacity: 0.55, symbol: 'circle-open', line: { color: ds.color, width: 1.5 } },
+                hovertemplate: 'c = %{x:.2f} \u00b5M<br>A = %{y:.4f}<extra>' + ds.label + '</extra>'
+            });
+            traces.push({
+                x: points.map(p => p.conc), y: points.map(p => p.mean),
+                error_y: { type: 'data', array: points.map(p => p.sd), visible: true, color: ds.color, thickness: 2, width: 7 },
+                type: 'scatter', mode: 'markers',
+                name: ds.label + ' \u2014 \u03b5\u202f=\u202f' + epsilon.toFixed(0) + ', R\u00b2\u202f=\u202f' + r2.toFixed(4),
+                legendgroup: lg,
+                marker: { color: ds.color, size: 11, symbol: 'circle', line: { color: bgColors.paper === '#ffffff' ? '#444' : '#fff', width: 1.5 } },
+                hovertemplate: 'c = %{x:.2f} \u00b5M<br>A = %{y:.4f}<extra>' + ds.label + ' moy.</extra>'
+            });
+            const regX = [0, globalMaxConc * 1.12];
+            traces.push({
+                x: regX, y: regX.map(c => epsilon * c * 1e-6),
+                type: 'scatter', mode: 'lines',
+                name: ds.label + ' (r\u00e9gression)', legendgroup: lg, showlegend: false,
+                line: { color: ds.color, width: 2, dash: 'dash' }, hoverinfo: 'skip'
+            });
+        });
+        return { traces, annotations, maxConc: globalMaxConc, maxAbs: globalMaxAbs };
+    }
+
+    function ecMakeLayout(bgColors, showGrid, maxConc, maxAbs) {
+        const titleText = document.getElementById('ecTitle').value || 'Droite de Beer-Lambert';
+        return {
+            paper_bgcolor: bgColors.paper, plot_bgcolor: bgColors.plot,
+            font: { color: bgColors.font, family: 'Segoe UI' },
+            title: { text: titleText, font: { size: 15, color: bgColors.font }, xref: 'paper', x: 0.5, xanchor: 'center' },
+            xaxis: { title: { text: 'Concentration (\u00b5M)', font: { size: 13 } }, tickfont: { size: 11 }, gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero, range: [-(maxConc * 0.06), maxConc * 1.18] },
+            yaxis: { title: { text: 'Absorbance', font: { size: 13 } }, tickfont: { size: 11 }, gridcolor: showGrid ? bgColors.grid : 'transparent', zerolinecolor: bgColors.zero, range: [-(maxAbs * 0.05), maxAbs * 1.30] },
+            legend: { bgcolor: 'rgba(0,0,0,0.05)', borderwidth: 0, font: { size: 11 } },
+            margin: { l: 65, r: 20, t: 55, b: 55 }, hovermode: 'closest'
+        };
+    }
+
+    function ecUpdatePlot() {
+        const emptyLayout = { paper_bgcolor: '#1a1a2e', plot_bgcolor: '#1a1a2e', font: { color: '#e0e0e0', family: 'Segoe UI' }, xaxis: { gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 11 } }, yaxis: { gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 11 } }, margin: { l: 65, r: 20, t: 55, b: 55 } };
+        const visible = ecDatasets.filter(d => d.visible && d.result);
+        if (visible.length === 0) {
+            Plotly.react('ecPlot', [], emptyLayout, { responsive: true, displaylogo: false });
+            requestAnimationFrame(() => Plotly.Plots.resize('ecPlot'));
+            return;
+        }
+        const showGrid = document.getElementById('ecGrid').checked;
+        const bgColors = getExportColors('dark');
+        const { traces, annotations, maxConc, maxAbs } = ecBuildTracesAndAnnotations(bgColors);
+        const layout = ecMakeLayout(bgColors, showGrid, maxConc, maxAbs);
+        layout.annotations = annotations;
+        Plotly.react('ecPlot', traces, layout, { responsive: true, displaylogo: false });
+        requestAnimationFrame(() => Plotly.Plots.resize('ecPlot'));
+    }
+
+    function ecRenderResults() {
+        const el = document.getElementById('ecResultsPanel');
+        const visible = ecDatasets.filter(d => d.visible && d.result);
+        if (visible.length === 0) { el.innerHTML = '<span style="color:#888;">Chargez un ou plusieurs fichiers pour commencer.</span>'; return; }
+        const subtractZero = document.getElementById('ecSubtractZero').checked;
+        let html = '';
+        visible.forEach(ds => {
+            const { epsilon, r2, points, wavelength, zeroAbs } = ds.result;
+            html += '<div style="border-left:3px solid ' + ds.color + '; padding-left:8px; margin-bottom:12px;">';
+            html += '<div style="color:' + ds.color + '; font-weight:bold; margin-bottom:2px;">' + ds.label + '</div>';
+            html += '<div style="line-height:1.7;">';
+            html += '<div style="color:#f472b6; font-size:1.05em; font-weight:bold;">\u03b5 = ' + epsilon.toFixed(0) + ' <span style="font-size:0.82em;">L\u00b7mol\u207b\u00b9\u00b7cm\u207b\u00b9</span></div>';
+            html += '<div>\u03bb = <span style="color:#4ecca3;">' + (wavelength ? wavelength.toFixed(1) + ' nm' : '?') + '</span></div>';
+            html += '<div>R\u00b2 = <span style="color:#4ecca3;">' + r2.toFixed(6) + '</span></div>';
+            html += '<div style="color:#888; font-size:0.88em;">A = \u03b5 \u00d7 l \u00d7 c &nbsp;(l = 1 cm)</div>';
+            if (zeroAbs !== null) html += '<div style="color:#888; font-size:0.88em;">Zero : ' + zeroAbs.toFixed(4) + (subtractZero ? ' \u2014 soustrait' : '') + '</div>';
+            html += '<table class="peaks-table" style="margin-top:6px; width:100%;"><tr><th>c (\u00b5M)</th><th>Abs moy.</th><th>\u03c3</th><th>n</th></tr>';
+            for (const p of points) html += '<tr><td>' + p.conc + '</td><td>' + p.mean.toFixed(4) + '</td><td>' + p.sd.toFixed(4) + '</td><td>' + p.absValues.length + '</td></tr>';
+            html += '</table></div></div>';
+        });
+        el.innerHTML = html;
+        document.getElementById('infoText').textContent = visible.length === 1
+            ? ('\u03b5 Beer-Lambert : ' + visible[0].result.epsilon.toFixed(0) + ' L\u00b7mol\u207b\u00b9\u00b7cm\u207b\u00b9 @ ' + (visible[0].result.wavelength ? visible[0].result.wavelength.toFixed(0) : '?') + ' nm \u2014 R\u00b2 = ' + visible[0].result.r2.toFixed(5))
+            : ('\u03b5 Beer-Lambert : ' + visible.length + ' jeux \u2014 \u03b5 : ' + visible.map(d => d.result.epsilon.toFixed(0)).join(', ') + ' L\u00b7mol\u207b\u00b9\u00b7cm\u207b\u00b9');
+    }
+
+    function ecExportImage(format) {
+        if (!ecDatasets.some(d => d.visible && d.result)) return;
+        const bgMode = document.getElementById('ecExportBg').value;
+        const showGrid = document.getElementById('ecGrid').checked;
+        exportImageWithBg('ecPlot', bgMode,
+            (bgColors) => ecBuildTracesAndAnnotations(bgColors).traces,
+            (bgColors) => {
+                const { maxConc, maxAbs, annotations } = ecBuildTracesAndAnnotations(bgColors);
+                const layout = ecMakeLayout(bgColors, showGrid, maxConc, maxAbs);
+                layout.annotations = annotations;
+                return layout;
+            },
+            'beer_lambert', format
+        );
+    }
+
+    function ecExportCSV() {
+        const visible = ecDatasets.filter(d => d.visible && d.result);
+        if (visible.length === 0) return;
+        const subtractZero = document.getElementById('ecSubtractZero').checked;
+        let csv = '# Beer-Lambert Analysis \u2014 multi-dataset\n';
+        csv += '# Datasets: ' + visible.map(d => d.label).join(', ') + '\n';
+        csv += '# Zero subtracted: ' + (subtractZero ? 'yes' : 'no') + '\n#\n';
+        visible.forEach(ds => {
+            const { epsilon, r2, points, wavelength, zeroAbs } = ds.result;
+            const maxN = Math.max(...points.map(p => p.absValues.length));
+            csv += '# --- ' + ds.label + ' ---\n# epsilon = ' + epsilon.toFixed(0) + ' L/mol/cm\n# lambda = ' + (wavelength ? wavelength.toFixed(1) : '?') + ' nm\n# R2 = ' + r2.toFixed(6) + '\n# Zero = ' + (zeroAbs !== null ? zeroAbs.toFixed(4) : 'N/A') + '\n';
+            let header = 'Dataset,Concentration_uM,Mean_Abs,SD_Abs';
+            for (let i = 1; i <= maxN; i++) header += ',Read_' + i;
+            csv += header + '\n';
+            for (const p of points) {
+                csv += ds.label + ',' + p.conc + ',' + p.mean.toFixed(6) + ',' + p.sd.toFixed(6);
+                for (let i = 0; i < maxN; i++) csv += ',' + (p.absValues[i] !== undefined ? p.absValues[i].toFixed(6) : '');
+                csv += '\n';
+            }
+            csv += '\n';
+        });
+        downloadCSVBlob(csv, 'beer_lambert_multi.csv');
+    }
+
+    // ε Beer-Lambert event listeners
+    (function() {
+        const dz = document.getElementById('ecDropZone'), fi = document.getElementById('ecFileInput');
+        dz.addEventListener('click', () => fi.click());
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); ecHandleFiles(e.dataTransfer.files); });
+        fi.addEventListener('change', e => { ecHandleFiles(e.target.files); fi.value = ''; });
+    })();
+
     // Init
     requestAnimationFrame(() => {
         uvUpdatePlot();
@@ -1466,8 +1978,9 @@
         const activeTab = document.querySelector('.tab-content.active');
         if (activeTab && activeTab.id === 'tab-uvvis') Plotly.Plots.resize('uvPlot');
         else if (activeTab && activeTab.id === 'tab-plate') Plotly.Plots.resize('prPlot');
+        else if (activeTab && activeTab.id === 'tab-ec') Plotly.Plots.resize('ecPlot');
     });
-    window.addEventListener('load', () => { requestAnimationFrame(() => { Plotly.Plots.resize('uvPlot'); uvUpdatePlot(); }); });
+    window.addEventListener('load', () => { requestAnimationFrame(() => { Plotly.Plots.resize('uvPlot'); uvUpdatePlot(); Plotly.Plots.resize('ecPlot'); }); });
     </script>
 </body>
 </html>

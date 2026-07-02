@@ -383,8 +383,8 @@
                     <div class="control-row">
                         <label>λ utilisée :</label>
                         <select id="lambdaMode" style="flex:1;" title="Kα1 si monochromateur, pondérée si Kα1+Kα2 non résolues">
-                            <option value="weighted" selected>Pondérée (Kα1+Kα2)</option>
-                            <option value="kalpha1">Kα1 seule</option>
+                            <option value="weighted">Pondérée (Kα1+Kα2)</option>
+                            <option value="kalpha1" selected>Kα1 seule</option>
                         </select>
                     </div>
                     <label class="checkbox-row">
@@ -393,7 +393,7 @@
                     </label>
                     <div class="control-row">
                         <label>K (Scherrer) :</label>
-                        <input type="number" id="scherrerK" value="0.9" step="0.01" min="0.1" max="1.5" style="width:60px;" title="Facteur de forme Scherrer (0.89 sphère, 0.94 cube)">
+                        <input type="number" id="scherrerK" value="0.89" step="0.01" min="0.1" max="1.5" style="width:60px;" title="Facteur de forme Scherrer (0.89 sphère, 0.94 cube)">
                     </div>
                     <div class="control-row">
                         <label>β instrument :</label>
@@ -408,11 +408,12 @@
                         <input type="number" id="instrBroadening" value="0.05" step="0.01" min="0" style="width:60px;" title="Élargissement instrumental manuel (FWHM)">
                     </div>
                     <div style="font-size:0.73em; color:#888; padding:2px 0 4px; line-height:1.4;" id="instrPolyInfo">
-                        β(2θ) = A + B₁·2θ + B₂·(2θ)²<br>
-                        A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵
+                        β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>
+                        A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵, B₃=−6.44×10⁻⁸
                     </div>
                     <button class="btn" onclick="runAnalysis()" style="margin-top:4px;">Analyser les pics</button>
                     <button class="btn" onclick="showWHPlot()" style="margin-top:2px;">📈 Graphe Williamson-Hall</button>
+                    <button class="btn" onclick="showSSPPlot()" style="margin-top:2px;">📊 Size-Strain Plot</button>
                     <button class="btn" onclick="exportPeaksCSV()" style="margin-top:2px;">Exporter (CSV)</button>
                     <button class="btn" onclick="exportPeaksXLSX()" style="margin-top:2px;">Exporter (XLSX)</button>
                 </div>
@@ -445,6 +446,7 @@
                     <h3>Paramètres cristallographiques</h3>
                     <div style="display:flex;gap:6px;align-items:center;">
                         <button onclick="showWHPlot()" style="background:rgba(233,69,96,0.15);border:1px solid #e94560;color:#e94560;cursor:pointer;padding:3px 10px;border-radius:4px;font-size:0.8em;" title="Ouvrir graphe Williamson-Hall">📈 W-H</button>
+                        <button onclick="showSSPPlot()" style="background:rgba(78,204,163,0.15);border:1px solid #4ecca3;color:#4ecca3;cursor:pointer;padding:3px 10px;border-radius:4px;font-size:0.8em;" title="Ouvrir Size-Strain Plot">📊 SSP</button>
                         <button onclick="document.getElementById('analysisPanel').classList.remove('visible')" style="background:none;border:none;color:#888;cursor:pointer;padding:4px 12px;font-size:1.1em;" title="Fermer">✕</button>
                     </div>
                 </div>
@@ -1227,7 +1229,7 @@
         const lambda = lambdaMode === 'weighted'
             ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
             : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
-        const K = parseFloat(document.getElementById('scherrerK').value) || 0.9;
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
         const peakThreshold = parseFloat(document.getElementById('peakThreshold').value) || 3;
         const peakDistance = parseInt(document.getElementById('peakDistance').value) || 10;
         const corrSinTheta = document.getElementById('corrSinTheta').checked;
@@ -1262,6 +1264,9 @@
                 const D_nm = (K * lambda) / (betaCorr * Math.cos(thetaRad)) / 10;
                 const betaCosTheta = betaCorr * Math.cos(thetaRad);
                 const fourSinTheta = 4 * Math.sin(thetaRad);
+                // Size-Strain Plot: Y=(d·β·cosθ)², X=d²·β·cosθ  (d en Å)
+                const xSSP = d * d * betaCosTheta;       // Å²
+                const ySSP = (d * betaCosTheta) ** 2;    // Å²
                 const halfWidth = Math.max(1, Math.round(p.fwhm / (x[1] - x[0]) * 2));
                 let area = 0;
                 for (let j = Math.max(0, p.idx - halfWidth); j < Math.min(x.length - 1, p.idx + halfWidth); j++) {
@@ -1272,7 +1277,7 @@
                     spectrum: ds.label, color: ds.color,
                     twoTheta: p.x, intensity: p.y, d, deltaD, fwhm: p.fwhm,
                     fwhmCorr: betaCorr * 180 / Math.PI,
-                    D_nm, betaCosTheta, fourSinTheta, area
+                    D_nm, betaCosTheta, fourSinTheta, xSSP, ySSP, area
                 });
             });
         });
@@ -1306,6 +1311,31 @@
                 }
             }
 
+            // SSP regression: (d·β·cosθ)² = (Kλ/D)·(d²·β·cosθ) + (ελ)²
+            // → slope = Kλ/D → D = Kλ/slope ; intercept = (ελ)² → ε = √intercept / λ
+            let sspResult = null;
+            if (specResults.length >= 2) {
+                const xsS = specResults.map(r => r.xSSP);
+                const ysS = specResults.map(r => r.ySSP);
+                const nS = xsS.length;
+                const sX = xsS.reduce((a, b) => a + b, 0);
+                const sY = ysS.reduce((a, b) => a + b, 0);
+                const sXY = xsS.reduce((a, b, i) => a + b * ysS[i], 0);
+                const sX2 = xsS.reduce((a, b) => a + b * b, 0);
+                const dS = nS * sX2 - sX * sX;
+                if (Math.abs(dS) > 1e-40) {
+                    const slopeS = (nS * sXY - sX * sY) / dS;
+                    const interceptS = (sY - slopeS * sX) / nS;
+                    const mYs = sY / nS;
+                    const ssTotS = ysS.reduce((a, b) => a + (b - mYs) ** 2, 0);
+                    const ssResS = ysS.reduce((a, b, i) => a + (b - (interceptS + slopeS * xsS[i])) ** 2, 0);
+                    const r2S = ssTotS > 0 ? 1 - ssResS / ssTotS : 0;
+                    const D_ssp = slopeS > 0 ? (K * lambda / slopeS) / 10 : null;  // nm
+                    const epsilon_ssp = Math.sqrt(Math.max(0, interceptS)) / lambda;  // sans unité
+                    sspResult = { D_ssp, epsilon_ssp, r2: r2S };
+                }
+            }
+
             // Crystallinity per spectrum
             let crystallinity = null;
             const { x, y } = applyTransform(ds, dsIdx);
@@ -1321,7 +1351,7 @@
             // Average Scherrer D
             const avgD = specResults.reduce((a, b) => a + b.D_nm, 0) / specResults.length;
 
-            perSpectrumStats.push({ label: ds.label, color: ds.color, whResult, crystallinity, avgD, nPeaks: specResults.length });
+            perSpectrumStats.push({ label: ds.label, color: ds.color, whResult, sspResult, crystallinity, avgD, nPeaks: specResults.length });
         });
 
         // Render results
@@ -1340,8 +1370,13 @@
             summaryHtml += ` &nbsp; D̄<sub>Scherrer</sub> = <span class="val">${s.avgD.toFixed(1)} nm</span>`;
             if (s.whResult) {
                 if (s.whResult.D_wh !== null) summaryHtml += ` &nbsp; D<sub>W-H</sub> = <span class="val">${s.whResult.D_wh.toFixed(1)} nm</span>`;
-                summaryHtml += ` &nbsp; ε = <span class="val">${(s.whResult.strain * 100).toFixed(3)}%</span>`;
-                summaryHtml += ` &nbsp; R² = <span class="${s.whResult.r2 > 0.8 ? 'val' : 'err'}">${s.whResult.r2.toFixed(3)}</span>`;
+                summaryHtml += ` &nbsp; ε<sub>W-H</sub> = <span class="val">${(s.whResult.strain * 100).toFixed(3)}%</span>`;
+                summaryHtml += ` &nbsp; R²<sub>W-H</sub> = <span class="${s.whResult.r2 > 0.8 ? 'val' : 'err'}">${s.whResult.r2.toFixed(3)}</span>`;
+            }
+            if (s.sspResult) {
+                if (s.sspResult.D_ssp !== null) summaryHtml += ` &nbsp; D<sub>SSP</sub> = <span class="val">${s.sspResult.D_ssp.toFixed(1)} nm</span>`;
+                summaryHtml += ` &nbsp; ε<sub>SSP</sub> = <span class="val">${(s.sspResult.epsilon_ssp * 100).toFixed(3)}%</span>`;
+                summaryHtml += ` &nbsp; R²<sub>SSP</sub> = <span class="${s.sspResult.r2 > 0.8 ? 'val' : 'err'}">${s.sspResult.r2.toFixed(3)}</span>`;
             }
             if (s.crystallinity !== null) {
                 summaryHtml += ` &nbsp; Cristallinité ≈ <span class="val">${s.crystallinity.toFixed(1)}%</span>`;
@@ -1377,11 +1412,11 @@
             runAnalysis();
             if (lastAnalysisResults.length === 0) return;
         }
-        let csv = 'Spectre,2Theta_deg,d_A,delta_d_A,FWHM_deg,FWHM_corr_deg,D_Scherrer_nm,Intensite,Aire,betaCosTheta,4sinTheta\n';
+        let csv = 'Spectre,2Theta_deg,d_A,delta_d_A,FWHM_deg,FWHM_corr_deg,D_Scherrer_nm,Intensite,Aire,betaCosTheta,4sinTheta,xSSP_A2,ySSP_A2\n';
         for (const r of lastAnalysisResults) {
             csv += `${r.spectrum},${r.twoTheta.toFixed(4)},${r.d.toFixed(4)},${r.deltaD.toFixed(4)},${r.fwhm.toFixed(4)},` +
                    `${r.fwhmCorr.toFixed(4)},${r.D_nm.toFixed(2)},${r.intensity.toFixed(1)},` +
-                   `${r.area.toFixed(1)},${r.betaCosTheta.toFixed(6)},${r.fourSinTheta.toFixed(6)}\n`;
+                   `${r.area.toFixed(1)},${r.betaCosTheta.toFixed(6)},${r.fourSinTheta.toFixed(6)},${r.xSSP.toFixed(8)},${r.ySSP.toFixed(10)}\n`;
         }
         const blob = new Blob([csv], { type: 'text/csv' });
         const a = document.createElement('a');
@@ -1396,15 +1431,15 @@
             runAnalysis();
             if (lastAnalysisResults.length === 0) return;
         }
-        const headers = ['Spectre', '2θ (°)', 'd (Å)', 'Δd (Å)', 'FWHM (°)', 'FWHM corr. (°)', 'D Scherrer (nm)', 'Intensité', 'Aire', 'β·cosθ', '4·sinθ'];
+        const headers = ['Spectre', '2θ (°)', 'd (Å)', 'Δd (Å)', 'FWHM (°)', 'FWHM corr. (°)', 'D Scherrer (nm)', 'Intensité', 'Aire', 'β·cosθ', '4·sinθ', 'x_SSP (Å²)', 'y_SSP (Å²)'];
         const rows = lastAnalysisResults.map(r => [
-            r.spectrum, r.twoTheta, r.d, r.deltaD, r.fwhm, r.fwhmCorr, r.D_nm, r.intensity, r.area, r.betaCosTheta, r.fourSinTheta
+            r.spectrum, r.twoTheta, r.d, r.deltaD, r.fwhm, r.fwhmCorr, r.D_nm, r.intensity, r.area, r.betaCosTheta, r.fourSinTheta, r.xSSP, r.ySSP
         ]);
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         // Column widths
         ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 20 : 14 }));
         // Number formats for data columns
-        const fmt = ['@', '0.000', '0.0000', '0.0000', '0.000', '0.000', '0.0', '0', '0', '0.000000', '0.000000'];
+        const fmt = ['@', '0.000', '0.0000', '0.0000', '0.000', '0.000', '0.0', '0', '0', '0.000000', '0.000000', '0.00000000', '0.0000000000'];
         for (let r = 1; r <= rows.length; r++) {
             for (let c = 1; c < headers.length; c++) {
                 const cell = ws[XLSX.utils.encode_cell({ r, c })];
@@ -1456,10 +1491,10 @@
         const info = document.getElementById('instrPolyInfo');
         if (mode === 'without_mono') {
             info.style.display = '';
-            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)²<br>A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵';
+            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>A=0.07748, B₁=−1.23×10⁻³, B₂=1.87×10⁻⁵, B₃=−6.44×10⁻⁸';
         } else if (mode === 'with_mono') {
             info.style.display = '';
-            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)²<br>A=0.04933, B₁=1.27×10⁻⁴, B₂=−1.91×10⁻⁶';
+            info.innerHTML = 'β(2θ) = A + B₁·2θ + B₂·(2θ)² + B₃·(2θ)³<br>A=0.04933, B₁=1.27×10⁻⁴, B₂=−1.91×10⁻⁶, B₃=−6.44×10⁻⁸';
         } else {
             info.style.display = 'none';
         }
@@ -1469,14 +1504,15 @@
     function getInstrBeta_rad(twoThetaDeg) {
         const mode = document.getElementById('instrMode').value;
         let betaDeg;
+        const B3 = -6.43532e-8;  // terme cubique PANalytical X'Pert MPD 1
         if (mode === 'without_mono') {
             // PANalytical X'Pert MPD 1 sans monochromateur
             const A = 0.07748, B1 = -0.00123, B2 = 1.86685e-05;
-            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg * twoThetaDeg;
+            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg ** 2 + B3 * twoThetaDeg ** 3;
         } else if (mode === 'with_mono') {
             // PANalytical X'Pert MPD 1 avec monochromateur
             const A = 0.04933, B1 = 0.000126832, B2 = -1.90653e-06;
-            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg * twoThetaDeg;
+            betaDeg = A + B1 * twoThetaDeg + B2 * twoThetaDeg ** 2 + B3 * twoThetaDeg ** 3;
         } else {
             betaDeg = parseFloat(document.getElementById('instrBroadening').value) || 0;
         }
@@ -1494,7 +1530,7 @@
         const lambdaA = lambdaMode === 'weighted'
             ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
             : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
-        const K = parseFloat(document.getElementById('scherrerK').value) || 0.9;
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
 
         const spectra = [...new Set(lastAnalysisResults.map(r => r.spectrum))];
         const traces = [];
@@ -1597,7 +1633,133 @@
         modal.style.display = 'flex';
         Plotly.react('whPlotDiv', traces, layout, { responsive: true, displaylogo: false });
     }
+
+    // ---- Size-Strain Plot ----
+    function showSSPPlot() {
+        if (lastAnalysisResults.length === 0) {
+            runAnalysis();
+            if (lastAnalysisResults.length === 0) return;
+        }
+
+        const lambdaMode = document.getElementById('lambdaMode').value;
+        const lambdaA = lambdaMode === 'weighted'
+            ? (parseFloat(document.getElementById('xrdWavelengthWeighted').value) || 1.5419)
+            : (parseFloat(document.getElementById('xrdWavelength').value) || 1.5406);
+        const K = parseFloat(document.getElementById('scherrerK').value) || 0.89;
+
+        const spectra = [...new Set(lastAnalysisResults.map(r => r.spectrum))];
+        const traces = [];
+        const annotations = [];
+
+        for (const spectrum of spectra) {
+            const pts = lastAnalysisResults.filter(r => r.spectrum === spectrum);
+            const color = pts[0].color;
+
+            traces.push({
+                x: pts.map(r => r.xSSP),
+                y: pts.map(r => r.ySSP),
+                mode: 'markers+text',
+                type: 'scatter',
+                name: spectrum,
+                marker: { color, size: 9, line: { color: '#fff', width: 1 } },
+                text: pts.map(r => r.twoTheta.toFixed(2) + '°'),
+                textposition: 'top center',
+                textfont: { color, size: 9 },
+                customdata: pts.map(r => [r.twoTheta, r.d, r.fwhmCorr, r.D_nm]),
+                hovertemplate: '2θ=%{customdata[0]:.3f}°<br>d=%{customdata[1]:.4f} Å<br>FWHM corr=%{customdata[2]:.4f}°<br>D=%{customdata[3]:.1f} nm<br>x=%{x:.6e} Å²<br>y=%{y:.6e} Å²<extra>' + spectrum + '</extra>'
+            });
+
+            if (pts.length >= 2) {
+                const xs = pts.map(r => r.xSSP);
+                const ys = pts.map(r => r.ySSP);
+                const n = xs.length;
+                const sumX = xs.reduce((a, b) => a + b, 0);
+                const sumY = ys.reduce((a, b) => a + b, 0);
+                const sumXY = xs.reduce((a, b, i) => a + b * ys[i], 0);
+                const sumX2 = xs.reduce((a, b) => a + b * b, 0);
+                const denom = n * sumX2 - sumX * sumX;
+                if (Math.abs(denom) > 1e-40) {
+                    const slope = (n * sumXY - sumX * sumY) / denom;
+                    const intercept = (sumY - slope * sumX) / n;
+                    const meanY = sumY / n;
+                    const ssTot = ys.reduce((a, b) => a + (b - meanY) ** 2, 0);
+                    const ssRes = ys.reduce((a, b, i) => a + (b - (intercept + slope * xs[i])) ** 2, 0);
+                    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+                    const D_ssp_nm = slope > 0 ? (K * lambdaA / slope) / 10 : null;
+                    const epsilon_ssp = Math.sqrt(Math.max(0, intercept)) / lambdaA;
+                    const strain_pct = epsilon_ssp * 100;
+
+                    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                    const pad = (xMax - xMin) * 0.15 || 1e-5;
+                    const xFit = [Math.max(0, xMin - pad), xMax + pad];
+                    const yFit = xFit.map(xv => intercept + slope * xv);
+
+                    traces.push({
+                        x: xFit, y: yFit,
+                        mode: 'lines', type: 'scatter',
+                        name: spectrum + ' (régression)',
+                        line: { color, width: 2, dash: 'dash' },
+                        showlegend: true,
+                        hovertemplate: 'Régression SSP<br>y=%{y:.6e}<extra>' + spectrum + '</extra>'
+                    });
+
+                    const xMid = (xMin + xMax) / 2;
+                    const yMid = intercept + slope * xMid;
+                    const labelLines = [
+                        D_ssp_nm !== null ? `D<sub>SSP</sub> = ${D_ssp_nm.toFixed(1)} nm` : 'D : pente ≤ 0',
+                        `ε<sub>SSP</sub> = ${strain_pct >= 0 ? '+' : ''}${strain_pct.toFixed(4)}%`,
+                        `R² = ${r2.toFixed(4)}`
+                    ];
+                    annotations.push({
+                        x: xMid, y: yMid,
+                        text: labelLines.join('<br>'),
+                        showarrow: true, arrowhead: 2, arrowsize: 0.8,
+                        arrowcolor: color, ax: 40, ay: -50,
+                        font: { size: 10, color },
+                        bgcolor: 'rgba(22,33,62,0.92)',
+                        bordercolor: color, borderwidth: 1, borderpad: 4,
+                        xref: 'x', yref: 'y'
+                    });
+                }
+            }
+        }
+
+        const layout = {
+            paper_bgcolor: '#1a1a2e', plot_bgcolor: '#1a1a2e',
+            font: { color: '#e0e0e0', family: 'Segoe UI', size: 11 },
+            title: { text: 'Size-Strain Plot :  (d·β·cosθ)² = (Kλ/D)·(d²·β·cosθ) + (ελ)²', font: { size: 13, color: '#e94560' } },
+            xaxis: {
+                title: { text: 'd²·β<sub>corr</sub>·cosθ (Å²)', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            yaxis: {
+                title: { text: '(d·β<sub>corr</sub>·cosθ)² (Å²)', font: { size: 12 } },
+                gridcolor: '#2a2a4a', zerolinecolor: '#2a2a4a', tickfont: { size: 10 }
+            },
+            legend: { bgcolor: 'rgba(22,33,62,0.9)', bordercolor: '#0f3460', borderwidth: 1, font: { size: 10 } },
+            annotations,
+            margin: { l: 75, r: 20, t: 50, b: 65 },
+            hovermode: 'closest'
+        };
+
+        document.getElementById('sspModal').style.display = 'flex';
+        Plotly.react('sspPlotDiv', traces, layout, { responsive: true, displaylogo: false });
+    }
     </script>
+
+    <!-- Modal Size-Strain Plot -->
+    <div id="sspModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+        <div style="background:#16213e; border:2px solid #0f3460; border-radius:10px; width:82%; max-width:1000px; height:72vh; display:flex; flex-direction:column; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-shrink:0;">
+                <h3 style="color:#4ecca3; font-size:0.88em; text-transform:uppercase; letter-spacing:1px; margin:0;">Size-Strain Plot</h3>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span style="font-size:0.75em; color:#888;">pente → D (Scherrer), ordonnée → ε (ε = √intercept / λ)</span>
+                    <button onclick="document.getElementById('sspModal').style.display='none'" style="background:none;border:none;color:#888;cursor:pointer;font-size:1.3em;padding:0 4px;" title="Fermer">✕</button>
+                </div>
+            </div>
+            <div id="sspPlotDiv" style="flex:1; min-height:0;"></div>
+        </div>
+    </div>
 
     <!-- Modal Williamson-Hall -->
     <div id="whModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
