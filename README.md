@@ -1,6 +1,6 @@
 # 🔬 Utilitaires de Spectrométrie de Masse & Spectroscopie
 
-Collection de trois outils indépendants dédiés à l'analyse de données en spectrométrie de masse (MALDI, MS/MS) et en spectroscopie UV-Vis / fluorescence.
+Collection de quatre outils indépendants dédiés à l'analyse de données en spectrométrie de masse (MALDI, MS/MS) et en spectroscopie UV-Vis / fluorescence.
 
 ---
 
@@ -33,7 +33,26 @@ python maldi_gui.py
 
 ---
 
-### 2. `msms_calculator.html` — MS/MS Fragment Calculator
+### 2. `maldi_spot_finder.py` — MALDI Spot Finder
+
+Outil Python dédié à l'identification et à l'analyse de spots MALDI dans les données expérimentales.
+
+**Fonctionnalités :**
+- Analyse de fichiers de données MALDI
+- Détection et repérage des spots exploitables
+- Sélection et filtrage des résultats selon les paramètres d'analyse
+- Export des résultats pour une analyse ultérieure
+
+**Lancement :**
+```bash
+python maldi_spot_finder.py
+```
+
+> Consultez les commentaires et les paramètres définis dans le script pour connaître le format des fichiers d'entrée et les éventuelles dépendances supplémentaires.
+
+---
+
+### 3. `msms_calculator.html` — MS/MS Fragment Calculator
 
 Outil web (HTML/CSS/JS autonome, sans serveur) pour le calcul théorique de fragments MS/MS et la digestion enzymatique de protéines multi-chaînes.
 
@@ -60,7 +79,7 @@ Outil web (HTML/CSS/JS autonome, sans serveur) pour le calcul théorique de frag
 
 ---
 
-### 3. `uv_vis_viewer.html` — UV-Vis / Plate Reader Viewer
+### 4. `uv_vis_viewer.html` — UV-Vis / Plate Reader Viewer
 
 Outil web (HTML/CSS/JS, utilise Plotly.js via CDN) pour la visualisation interactive de spectres UV-Vis et de données de plate reader.
 
@@ -83,7 +102,7 @@ Outil web (HTML/CSS/JS, utilise Plotly.js via CDN) pour la visualisation interac
 - Détection des λmax par spectre
 - Export PNG, SVG, CSV, Split CSV (un fichier par composé), tableau λmax, export global
 
-**Utilisation :** ouvrir `uv_vis_viewer.html` dans un navigateur web (connexion internet requise pour Plotly.js).
+**Utilisation :** ouvrir `uv_vis_viewer.html` directement dans un navigateur web (connexion internet requise pour Plotly.js).
 
 ---
 
@@ -92,6 +111,7 @@ Outil web (HTML/CSS/JS, utilise Plotly.js via CDN) pour la visualisation interac
 | Outil | Plateforme | Prérequis |
 |---|---|---|
 | `maldi_gui.py` | Windows / macOS / Linux | Python 3.8+, pip |
+| `maldi_spot_finder.py` | Windows / macOS / Linux | Python 3.8+, selon les dépendances du script |
 | `msms_calculator.html` | Tout navigateur moderne | Aucun (standalone) |
 | `uv_vis_viewer.html` | Tout navigateur moderne | Connexion internet (Plotly CDN) |
 
